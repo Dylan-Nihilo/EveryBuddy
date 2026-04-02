@@ -1,0 +1,28 @@
+{
+  "name": "everybuddy",
+  "version": "0.1.0",
+  "description": "An open terminal AI companion with deterministic bones and AI soul.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "buddy": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@8.6.12",
+  "dependencies": {
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
