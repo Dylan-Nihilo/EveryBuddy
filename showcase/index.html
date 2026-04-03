@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EveryBuddy · Legendary Tanuki Showcase</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      />
+    </noscript>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-left"></div>
+    <div class="ambient ambient-right"></div>
+
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="hero-kicker">EveryBuddy / Legendary Tanuki</p>
+        <h1>A terminal familiar with actual stage presence.</h1>
+        <p class="hero-subtitle">
+          One legendary tanuki, shown two ways: a Ghostty-style hero surface for atmosphere, and
+          the tmux runtime shape users actually get after installation.
+        </p>
+        <div class="hero-steps" aria-label="Install steps">
+          <span class="step-chip">npm install -g everybuddy</span>
+          <span class="step-chip">buddy</span>
+          <span class="step-chip">buddy install tmux</span>
+        </div>
+      </div>
+
+      <section class="hero-panel">
+        <div class="hero-panel-head">
+          <p class="section-kicker">Homepage Hero</p>
+          <div id="hero-mode-switcher" class="hero-mode-switcher" aria-label="Hero mode switcher"></div>
+        </div>
+        <div id="hero-stage" class="hero-stage" aria-live="polite"></div>
+      </section>
+    </header>
+
+    <main class="layout">
+      <section class="shelf-panel">
+        <div class="shelf-copy">
+          <p class="section-kicker">Legendary-First Shelf</p>
+          <h2>Current rarity spectrum, anchored by the tanuki.</h2>
+          <p>
+            The homepage keeps the catalog quiet. One specimen per band is enough to show the roster
+            without turning the landing page back into a wall of demos.
+          </p>
+          <div class="catalog-meta">
+            <span><strong id="artifact-count">23</strong> species in the current sprite roster</span>
+            <span><strong id="rarity-count">5</strong> active rarity bands</span>
+            <span>tmux + zsh is the current runtime host</span>
+          </div>
+        </div>
+
+        <div id="rarity-shelf" class="rarity-shelf"></div>
+      </section>
+    </main>
+
+    <footer class="footer-note">
+      <p>EveryBuddy showcase · one legendary tanuki, two terminal surfaces</p>
+    </footer>
+
+    <script defer src="./app.js"></script>
+  </body>
+</html>
