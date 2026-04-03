@@ -113,11 +113,15 @@ function parseCompanionSoul(value: unknown): CompanionSoul {
     throw new Error("Companion `soul` must be an object.");
   }
 
-  const { name, personality, modelUsed } = value;
+  const { name, tagline, personality, modelUsed } = value;
   const observerProfile = parseOptionalObserverProfile(value.observerProfile);
 
   if (typeof name !== "string" || name.trim().length === 0) {
     throw new Error("Companion soul `name` must be a non-empty string.");
+  }
+
+  if (tagline !== undefined && (typeof tagline !== "string" || tagline.trim().length === 0)) {
+    throw new Error("Companion soul `tagline` must be a non-empty string when present.");
   }
 
   if (typeof personality !== "string" || personality.trim().length === 0) {
@@ -130,6 +134,7 @@ function parseCompanionSoul(value: unknown): CompanionSoul {
 
   return {
     name: name.trim(),
+    ...(typeof tagline === "string" ? { tagline: tagline.trim() } : {}),
     personality: personality.trim(),
     observerProfile: observerProfile ?? { ...DEFAULT_OBSERVER_PROFILE },
     modelUsed: modelUsed.trim(),

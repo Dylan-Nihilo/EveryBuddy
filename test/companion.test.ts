@@ -16,6 +16,7 @@ test("writeCompanionRecord persists and readCompanionRecord restores the full re
     bones,
     soul: {
       name: "Mochi",
+      tagline: "A dry spark behind the prompt.",
       personality: "Calm, observant, and slightly judgmental about messy git history.",
       observerProfile: {
         voice: "dry",

@@ -88,7 +88,7 @@ test("runSetupCommand prompts for a missing API key, saves config, and persists 
       providerFactory: ({ model }) => ({
         modelId: model,
         async complete() {
-          return '{"name":"Ember Tanuki","personality":"Quiet, precise, and always watching your terminal habits.","observerProfile":{"voice":"dry","chattiness":2,"sharpness":3,"patience":4}}';
+          return '{"name":"Ember Tanuki","tagline":"A low ember watching every keystroke.","personality":"Quiet, precise, and always watching your terminal habits.","observerProfile":{"voice":"dry","chattiness":2,"sharpness":3,"patience":4}}';
         },
       }),
       installFlow: async () => undefined,
@@ -103,6 +103,7 @@ test("runSetupCommand prompts for a missing API key, saves config, and persists 
     assert.equal(config.observerModel, undefined);
     assert.equal(config.baseUrl, "https://provider.example/v1");
     assert.equal(companion?.soul.name, "Ember Tanuki");
+    assert.equal(companion?.soul.tagline, "A low ember watching every keystroke.");
     assert.equal(companion?.soul.observerProfile.voice, "dry");
     assert.equal(companion?.soul.modelUsed, "test-model");
     assert.match(io.output, /Saved API key to/);
@@ -178,7 +179,7 @@ test("runSetupCommand retries soul imprint and succeeds on the second attempt", 
             throw new Error("temporary upstream failure");
           }
 
-          return '{"name":"Retry Fox","personality":"It remembers your stumbles and smirks when you recover.","observerProfile":{"voice":"playful","chattiness":4,"sharpness":4,"patience":2}}';
+          return '{"name":"Retry Fox","tagline":"It waits where failures learn to blink.","personality":"It remembers your stumbles and smirks when you recover.","observerProfile":{"voice":"playful","chattiness":4,"sharpness":4,"patience":2}}';
         },
       }),
       installFlow: async () => undefined,
@@ -188,6 +189,7 @@ test("runSetupCommand retries soul imprint and succeeds on the second attempt", 
     const companion = await readCompanionRecord(storageDir);
     assert.equal(attempts, 2);
     assert.equal(companion?.soul.name, "Retry Fox");
+    assert.equal(companion?.soul.tagline, "It waits where failures learn to blink.");
     assert.match(io.output, /Soul imprint failed: temporary upstream failure/);
     assert.match(io.output, /Final Reveal/);
   } finally {
@@ -299,6 +301,7 @@ function createCompanionRecord(userId: string, name: string): CompanionRecord {
     bones: rollCompanion(userId),
     soul: {
       name,
+      tagline: "A small shadow at the edge of the shell.",
       personality: "Quiet, observant, and not impressed by sloppy shell work.",
       observerProfile: {
         voice: "dry",

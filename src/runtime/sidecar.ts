@@ -17,6 +17,7 @@ import {
 import { ensureSocketDirectory, removeSocketIfExists, socketPathForWindow } from "./socket.js";
 import { SIDECAR_OPTION, TARGET_OPTION, TmuxClient } from "./tmux.js";
 import type { RenderMode, ShellEvent, SidecarState } from "./types.js";
+import type { CompanionRecord, ObserverVoice, StatName } from "../types/companion.js";
 
 const FRAME_TICK_MS = 500;
 const HEALTH_TICK_MS = 1000;
@@ -505,9 +506,10 @@ function renderCompanionDock(
   const statLine = dim(
     `${peakStat.toLowerCase()} ${String(peakValue).padStart(2, "0")} · ${dumpStat.toLowerCase()} ${String(dumpValue).padStart(2, "0")}`,
   );
+  const summary = buildIdleSoulSummary(companion);
   const personalityLines =
     state.reactionText === undefined
-      ? wrapText(firstSentence(companion.soul.personality), summaryWidth, IDLE_SUMMARY_MAX_LINES).map((line) =>
+      ? wrapText(summary, summaryWidth, IDLE_SUMMARY_MAX_LINES).map((line) =>
           dim(centerLine(line, paneWidth)),
         )
       : [];
@@ -833,14 +835,81 @@ function splitWrapTokens(text: string): string[] {
   return Array.from(trimmed);
 }
 
-function firstSentence(value: string): string {
-  const normalized = value.trim();
-  if (!normalized) {
-    return "";
+export function buildIdleSoulSummary(companion: CompanionRecord): string {
+  const tagline = companion.soul.tagline?.trim();
+  if (tagline) {
+    return tagline;
   }
 
-  const match = normalized.match(/^(.+?[。！？!?\.])(?:\s|$)/u);
-  return match?.[1]?.trim() || normalized;
+  const profile = companion.soul.observerProfile;
+  const [peakStat] = getPeakStat(companion.bones.stats);
+  const [dumpStat] = getDumpStat(companion.bones.stats);
+
+  if (looksChinese(companion.soul.personality)) {
+    return `${voiceLabelZh(profile.voice)} · ${statLabelZh(peakStat)}强，${statLabelZh(dumpStat)}低`;
+  }
+
+  return `${voiceLabelEn(profile.voice)} · high ${statLabelEn(peakStat)} · low ${statLabelEn(dumpStat)}`;
+}
+
+function looksChinese(value: string): boolean {
+  return /[\u3400-\u9fff]/u.test(value);
+}
+
+function voiceLabelZh(voice: ObserverVoice): string {
+  switch (voice) {
+    case "quiet":
+      return "安静型";
+    case "dry":
+      return "冷面型";
+    case "playful":
+      return "俏皮型";
+    case "deadpan":
+      return "面瘫型";
+  }
+}
+
+function voiceLabelEn(voice: ObserverVoice): string {
+  switch (voice) {
+    case "quiet":
+      return "quiet";
+    case "dry":
+      return "dry";
+    case "playful":
+      return "playful";
+    case "deadpan":
+      return "deadpan";
+  }
+}
+
+function statLabelZh(stat: StatName): string {
+  switch (stat) {
+    case "GRIT":
+      return "抗压";
+    case "FOCUS":
+      return "专注";
+    case "CHAOS":
+      return "混沌";
+    case "WIT":
+      return "机灵";
+    case "SASS":
+      return "毒舌";
+  }
+}
+
+function statLabelEn(stat: StatName): string {
+  switch (stat) {
+    case "GRIT":
+      return "grit";
+    case "FOCUS":
+      return "focus";
+    case "CHAOS":
+      return "chaos";
+    case "WIT":
+      return "wit";
+    case "SASS":
+      return "sass";
+  }
 }
 
 function splitTokenByDisplayWidth(token: string, width: number): [string, string] {

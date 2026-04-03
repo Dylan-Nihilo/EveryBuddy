@@ -19,6 +19,7 @@ export async function hatchSoul(
 
   return {
     name: parsed.name,
+    tagline: parsed.tagline,
     personality: parsed.personality,
     observerProfile: parsed.observerProfile,
     modelUsed: provider.modelId,
@@ -40,7 +41,7 @@ export function buildCompanionRecord(
 
 export function parseHatchResponse(
   response: string,
-): Pick<CompanionSoul, "name" | "personality" | "observerProfile"> {
+): Pick<CompanionSoul, "name" | "tagline" | "personality" | "observerProfile"> {
   const stripped = stripMarkdownFence(response);
   const parsed = JSON.parse(stripped) as unknown;
 
@@ -50,6 +51,7 @@ export function parseHatchResponse(
 
   const record = parsed as Record<string, unknown>;
   const name = normalizeField(record.name);
+  const tagline = normalizeField(record.tagline);
   const personality = normalizeField(record.personality);
   const observerProfile = parseObserverProfile(record.observerProfile);
 
@@ -57,11 +59,15 @@ export function parseHatchResponse(
     throw new Error("Hatch response `name` must be between 1 and 40 characters.");
   }
 
+  if (tagline.length === 0 || tagline.length > 80) {
+    throw new Error("Hatch response `tagline` must be between 1 and 80 characters.");
+  }
+
   if (personality.length === 0 || personality.length > 300) {
     throw new Error("Hatch response `personality` must be between 1 and 300 characters.");
   }
 
-  return { name, personality, observerProfile };
+  return { name, tagline, personality, observerProfile };
 }
 
 export function buildHatchPrompt(bones: CompanionBones, language: BuddyLanguage): string {
@@ -85,6 +91,9 @@ export function buildHatchPrompt(bones: CompanionBones, language: BuddyLanguage)
     "Rules:",
     "- Name must be 1-2 words.",
     "- Name must fit the species and rarity.",
+    "- Tagline must be one short, evocative flavor-text sentence like a game companion card.",
+    "- Tagline must feel poetic and memorable, not a literal summary.",
+    "- Tagline must stay under 80 characters.",
     "- Personality must be 2-3 sentences.",
     "- Personality must reference the peak stat as a defining trait.",
     "- Personality must reference the dump stat as a charming flaw.",
@@ -92,7 +101,7 @@ export function buildHatchPrompt(bones: CompanionBones, language: BuddyLanguage)
     '- Observer profile JSON shape: {"voice":"quiet|dry|playful|deadpan","chattiness":1-5,"sharpness":1-5,"patience":1-5}',
     `- ${languageInstruction}`,
     "- Return only valid JSON.",
-    '- JSON shape: {"name":"...","personality":"...","observerProfile":{"voice":"...","chattiness":3,"sharpness":3,"patience":3}}',
+    '- JSON shape: {"name":"...","tagline":"...","personality":"...","observerProfile":{"voice":"...","chattiness":3,"sharpness":3,"patience":3}}',
   ].join("\n");
 }
 

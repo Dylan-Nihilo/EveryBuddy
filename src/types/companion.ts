@@ -82,6 +82,7 @@ export interface ObserverProfile {
 
 export interface CompanionSoul {
   name: string;
+  tagline?: string | undefined;
   personality: string;
   observerProfile: ObserverProfile;
   modelUsed: string;
