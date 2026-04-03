@@ -4,20 +4,6 @@ export type ShellEventType = "pane_active" | "input_update" | "command_start" | 
 export type SidecarStatus = "idle" | "typing" | "thinking" | "finished";
 export type EventImportance = "silent" | "low" | "high" | "addressed";
 export type RenderMode = "full" | "narrow";
-export type ObservedCommandCategory =
-  | "addressed"
-  | "routine"
-  | "navigation"
-  | "git"
-  | "git_commit"
-  | "git_push"
-  | "git_integrate"
-  | "test"
-  | "build"
-  | "deploy"
-  | "docker"
-  | "install"
-  | "shell";
 export type ObservedOutcome = "success" | "failure" | "addressed" | "unknown";
 
 export interface ShellEvent {
@@ -33,25 +19,42 @@ export interface ShellEvent {
 export interface ObservedCommand {
   raw: string;
   normalized: string;
-  category: ObservedCommandCategory;
-  significance: string;
   cwdRole: string;
   addressedToBuddy: boolean;
+}
+
+export interface CommandWindowEntry {
+  command: string;
+  normalizedCommand: string;
+  cwd: string;
+  cwdRole: string;
+  exitCode: number | undefined;
+  durationMs: number | undefined;
+  timestamp: number;
+  addressedToBuddy: boolean;
+}
+
+export interface ObserverDecision {
+  shouldSpeak: boolean;
+  reaction?: string | undefined;
+  topic?: string | undefined;
+  mood?: string | undefined;
 }
 
 export interface MemoryEntry {
   timestamp: number;
   commandRaw: string;
   commandNormalized: string;
-  category: ObservedCommandCategory;
   cwd: string;
+  cwdRole: string;
   outcome: ObservedOutcome;
+  exitCode: number | undefined;
   durationMs: number | undefined;
   importance: EventImportance;
   reactionText: string | undefined;
   addressedToBuddy: boolean;
-  significance: string;
-  cwdRole: string;
+  topic?: string | undefined;
+  mood?: string | undefined;
 }
 
 export interface CommandTracker {
@@ -59,18 +62,15 @@ export interface CommandTracker {
   commandRaw: string;
   startedAt: number;
   cwd: string;
-  category: ObservedCommandCategory;
-  importance: EventImportance;
   addressedToBuddy: boolean;
-  significance: string;
   cwdRole: string;
 }
 
 export interface RecentReaction {
   text: string;
   at: number;
-  importance: EventImportance;
-  category: ObservedCommandCategory;
+  topic?: string | undefined;
+  mood?: string | undefined;
 }
 
 export interface SidecarState {
@@ -89,6 +89,7 @@ export interface SidecarState {
   lastUpdatedAt: number;
   memory: MemoryEntry[];
   commandTrackers: Record<string, CommandTracker>;
+  commandWindows: Record<string, CommandWindowEntry[]>;
   recentReaction: RecentReaction | undefined;
   recentNotableReactionAt: number | undefined;
   directAddressActive: boolean;

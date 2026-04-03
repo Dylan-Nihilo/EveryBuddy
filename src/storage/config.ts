@@ -1,5 +1,6 @@
 import os from "node:os";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import { configFilePath, defaultStorageDir } from "./paths.js";
 import type {
@@ -11,6 +12,7 @@ import type {
 
 export const DEFAULT_OPENAI_BASE_URL = "https://coding.dashscope.aliyuncs.com/v1";
 export const DEFAULT_OPENAI_MODEL = "qwen3.5-plus";
+export const DEFAULT_OPENAI_OBSERVER_MODEL = "qwen3-coder-next";
 
 export interface ResolveBuddyConfigOptions {
   model?: string | undefined;
@@ -45,11 +47,17 @@ export async function resolveBuddyConfig(
     storageDir,
   };
 
+  const baseUrl = normalizeOptionalString(merged.baseUrl) ?? DEFAULT_OPENAI_BASE_URL;
+  const observerModel =
+    normalizeOptionalString(merged.observerModel) ??
+    (baseUrl === DEFAULT_OPENAI_BASE_URL ? DEFAULT_OPENAI_OBSERVER_MODEL : undefined);
+
   return {
     provider: "openai",
     model: typeof merged.model === "string" ? merged.model.trim() : "",
+    observerModel,
     apiKey: normalizeOptionalString(merged.apiKey),
-    baseUrl: normalizeOptionalString(merged.baseUrl) ?? DEFAULT_OPENAI_BASE_URL,
+    baseUrl,
     language: normalizeLanguage(merged.language),
     storageDir,
   };
@@ -108,11 +116,43 @@ export async function readBuddyConfigFile(storageDir = defaultStorageDir()): Pro
   }
 }
 
+export async function writeBuddyConfigFile(
+  config: BuddyConfig,
+  storageDir = defaultStorageDir(),
+): Promise<void> {
+  const normalized = parseBuddyConfig(config);
+  const targetPath = configFilePath(storageDir);
+  const tempPath = path.join(
+    storageDir,
+    `.config.${process.pid}.${Date.now().toString(36)}.tmp`,
+  );
+  const payload = JSON.stringify(normalized, null, 2);
+
+  await mkdir(storageDir, { recursive: true });
+  await writeFile(tempPath, payload, "utf8");
+  await rename(tempPath, targetPath);
+}
+
+export async function updateBuddyConfigFile(
+  updates: BuddyConfig,
+  storageDir = defaultStorageDir(),
+): Promise<BuddyConfig> {
+  const current = await readBuddyConfigFile(storageDir);
+  const next = parseBuddyConfig({
+    ...current,
+    ...compactConfig(updates),
+  });
+
+  await writeBuddyConfigFile(next, storageDir);
+  return next;
+}
+
 function readEnvConfig(): BuddyConfig {
   return compactConfig({
     apiKey: process.env.OPENAI_API_KEY ?? process.env.DASHSCOPE_API_KEY,
     baseUrl: process.env.OPENAI_BASE_URL,
     model: process.env.OPENAI_MODEL,
+    observerModel: process.env.OPENAI_OBSERVER_MODEL,
   });
 }
 
@@ -123,6 +163,7 @@ function parseBuddyConfig(value: unknown): BuddyConfig {
 
   const provider = value.provider;
   const model = value.model;
+  const observerModel = value.observerModel;
   const apiKey = value.apiKey;
   const baseUrl = value.baseUrl;
   const language = value.language;
@@ -139,6 +180,10 @@ function parseBuddyConfig(value: unknown): BuddyConfig {
     throw new Error("Config `apiKey` must be a string.");
   }
 
+  if (observerModel !== undefined && typeof observerModel !== "string") {
+    throw new Error("Config `observerModel` must be a string.");
+  }
+
   if (baseUrl !== undefined && typeof baseUrl !== "string") {
     throw new Error("Config `baseUrl` must be a string.");
   }
@@ -150,6 +195,7 @@ function parseBuddyConfig(value: unknown): BuddyConfig {
   return compactConfig({
     provider,
     model,
+    observerModel,
     apiKey,
     baseUrl,
     language,

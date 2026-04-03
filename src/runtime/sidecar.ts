@@ -8,8 +8,10 @@ import { bold, colorize, dim } from "../render/color.js";
 import { EYES, SPECIES, renderCompactFace } from "../render/sprites.js";
 import {
   buildCommandTracker,
+  buildCommandWindowEntry,
   buildMemoryEntry,
   createCompanionObserver,
+  rememberCommandWindowEntry,
   rememberMemoryEntry,
 } from "./observer.js";
 import { ensureSocketDirectory, removeSocketIfExists, socketPathForWindow } from "./socket.js";
@@ -23,9 +25,11 @@ const DEFAULT_PANE_WIDTH = 30;
 const DEFAULT_PANE_HEIGHT = 24;
 const BUBBLE_SHOW_MS = 10_000;
 const FADE_WINDOW_MS = 3_000;
-const BUBBLE_MAX_WIDTH = 22;
-const IDLE_SUMMARY_WIDTH = 22;
-const NARROW_LABEL_CAP = 24;
+const BUBBLE_MAX_WIDTH = 24;
+const BUBBLE_MAX_LINES = 5;
+const IDLE_SUMMARY_WIDTH = 24;
+const IDLE_SUMMARY_MAX_LINES = 3;
+const NARROW_REACTION_MAX_LINES = 2;
 const PULSE_TICKS = 4;
 const IDLE_SEQUENCE = [0, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 2, 0, 0, 0];
 const PET_BURST_FRAMES = [
@@ -67,6 +71,7 @@ export async function runSidecarCommand(options: SidecarCommandOptions): Promise
     lastUpdatedAt: Date.now(),
     memory: [],
     commandTrackers: {},
+    commandWindows: {},
     recentReaction: undefined,
     recentNotableReactionAt: undefined,
     directAddressActive: false,
@@ -227,6 +232,16 @@ async function handleShellEvent(
     }
 
     if (event.type === "command_end") {
+      if (plan.command) {
+        state.commandWindows[event.paneId] = rememberCommandWindowEntry(
+          state.commandWindows[event.paneId] ?? [],
+          buildCommandWindowEntry({
+            event,
+            command: plan.command,
+            durationMs: plan.durationMs,
+          }),
+        );
+      }
       delete state.commandTrackers[event.paneId];
       state.directAddressActive = false;
     }
@@ -241,28 +256,29 @@ async function handleShellEvent(
       return;
     }
 
-    const modelReaction = await observer.maybeGenerateReaction(plan, event, state);
+    const modelDecision = await observer.maybeGenerateDecision(plan, event, state);
     if (!isCurrent()) {
       return;
     }
 
+    const modelReaction = modelDecision?.reaction;
     const finalReaction = modelReaction ?? plan.reactionText;
     if (modelReaction) {
       setTransientReaction(state, modelReaction, Date.now());
       rerender();
     }
 
-    if (finalReaction && plan.command && (plan.importance === "high" || plan.importance === "addressed")) {
+    if (finalReaction && plan.command) {
       state.recentReaction = {
         text: finalReaction,
         at: Date.now(),
-        importance: plan.importance,
-        category: plan.command.category,
+        topic: modelDecision?.topic,
+        mood: modelDecision?.mood,
       };
       state.recentNotableReactionAt = Date.now();
     }
 
-    if (plan.shouldRemember && plan.command) {
+    if (finalReaction && plan.command) {
       state.memory = rememberMemoryEntry(
         state.memory,
         buildMemoryEntry({
@@ -271,6 +287,8 @@ async function handleShellEvent(
           importance: plan.importance,
           durationMs: plan.durationMs,
           reactionText: finalReaction,
+          topic: modelDecision?.topic,
+          mood: modelDecision?.mood,
         }),
       );
     }
@@ -361,38 +379,49 @@ function renderCompanionSidecar(state: SidecarState): string[] {
   const burst = renderPetBurst(state, companion.bones.color.accent);
 
   if (state.renderMode === "narrow") {
-    return renderNarrowCompanion(state, sprite, reaction, eye.char, companion.bones.color.primary);
+    return renderNarrowCompanion(state, reaction, eye.char, companion.bones.color.primary);
   }
 
   const paneWidth = currentPaneWidth();
+  const paneHeight = currentPaneHeight();
   const statusHint = statusHintText(state.status, state.lastExitCode);
+  const dockLines = renderCompanionDock(
+    state,
+    sprite,
+    burst,
+    paneWidth,
+    companion.bones.color.primary,
+    companion.bones.color.accent,
+    resolveIdleSummaryWidth(paneWidth),
+  );
   const lines: string[] = [];
 
   if (reaction.text) {
-    lines.push(...centerBlock(renderSpeechBubble(reaction.text, reaction.fading, companion.bones.color.primary), paneWidth));
+    lines.push(
+      ...centerBlock(
+        renderSpeechBubble(
+          reaction.text,
+          reaction.fading,
+          companion.bones.color.primary,
+          resolveBubbleContentWidth(paneWidth),
+          resolveBubbleMaxLines(paneHeight, dockLines.length),
+        ),
+        paneWidth,
+      ),
+    );
     lines.push("");
   } else if (statusHint) {
     lines.push(dim(centerLine(statusHint, paneWidth)));
     lines.push("");
   }
 
-  lines.push(
-    ...renderCompanionDock(
-      state,
-      sprite,
-      burst,
-      paneWidth,
-      companion.bones.color.primary,
-      companion.bones.color.accent,
-    ),
-  );
+  lines.push(...dockLines);
 
   return trimTrailingEmptyLines(lines);
 }
 
 function renderNarrowCompanion(
   state: SidecarState,
-  _sprite: string[],
   reaction: { text: string | undefined; fading: boolean },
   eyeChar: string,
   color: string,
@@ -403,29 +432,47 @@ function renderNarrowCompanion(
     color,
     isPulseActive(state),
   );
-  const rawLabel = reaction.text
-    ? `"${truncate(reaction.text, NARROW_LABEL_CAP)}"`
-    : state.companion?.soul.name ?? "EveryBuddy";
-  const label = reaction.fading ? dim(rawLabel) : styleNarrowLabel(rawLabel, state, color);
+  const rawLabel = reaction.text ?? state.companion?.soul.name ?? "EveryBuddy";
+  const labelLines = wrapText(
+    rawLabel,
+    Math.max(10, paneWidth - 2),
+    reaction.text ? NARROW_REACTION_MAX_LINES : 1,
+  ).map((line) => {
+    const styled = reaction.fading ? dim(line) : styleNarrowLabel(line, state, color);
+    return centerLine(styled, paneWidth);
+  });
   const statusHint = !reaction.text ? statusHintText(state.status, state.lastExitCode) : undefined;
 
   return trimTrailingEmptyLines([
-    centerLine(`${face} ${label}`, paneWidth),
+    centerLine(face, paneWidth),
+    ...labelLines,
     ...(statusHint ? [dim(centerLine(statusHint, paneWidth))] : []),
   ]);
 }
 
 function renderEmptySidecar(state: SidecarState): string[] {
   const paneWidth = currentPaneWidth();
+  const paneHeight = currentPaneHeight();
   const reaction = resolveReactionBubble(state, Date.now());
   const lines = [
     centerLine(dim("No companion hatched yet."), paneWidth),
-    centerLine("Run `buddy hatch`", paneWidth),
+    centerLine("Run `buddy`", paneWidth),
   ];
 
   if (reaction.text) {
     lines.push("");
-    lines.push(...centerBlock(renderSpeechBubble(reaction.text, reaction.fading, "#9CA3AF"), paneWidth));
+    lines.push(
+      ...centerBlock(
+        renderSpeechBubble(
+          reaction.text,
+          reaction.fading,
+          "#9CA3AF",
+          resolveBubbleContentWidth(paneWidth),
+          resolveBubbleMaxLines(paneHeight, lines.length),
+        ),
+        paneWidth,
+      ),
+    );
   }
 
   return trimTrailingEmptyLines(lines);
@@ -438,6 +485,7 @@ function renderCompanionDock(
   paneWidth: number,
   primaryColor: string,
   accentColor: string,
+  summaryWidth: number,
 ): string[] {
   const companion = state.companion;
   if (!companion) {
@@ -459,7 +507,7 @@ function renderCompanionDock(
   );
   const personalityLines =
     state.reactionText === undefined
-      ? wrapText(firstSentence(companion.soul.personality), IDLE_SUMMARY_WIDTH, 2).map((line) =>
+      ? wrapText(firstSentence(companion.soul.personality), summaryWidth, IDLE_SUMMARY_MAX_LINES).map((line) =>
           dim(centerLine(line, paneWidth)),
         )
       : [];
@@ -481,9 +529,10 @@ function renderSpeechBubble(
   text: string,
   fading: boolean,
   color: string,
+  contentWidth: number,
+  maxLines: number,
 ): string[] {
-  const contentWidth = BUBBLE_MAX_WIDTH;
-  const wrapped = wrapText(text, contentWidth, 3);
+  const wrapped = wrapText(text, contentWidth, maxLines);
   const innerWidth = Math.max(...wrapped.map((line) => visibleLength(line)), 8);
   const borderTop = styleBubbleBorder(`╭${"─".repeat(innerWidth + 2)}╮`, color, fading);
   const borderBottom = styleBubbleBorder(`╰${"─".repeat(innerWidth + 2)}╯`, color, fading);
@@ -501,6 +550,19 @@ function renderSpeechBubble(
     borderBottom,
     `${tailPadding}${styleBubbleBorder("╲", color, fading)}`,
   ];
+}
+
+function resolveBubbleContentWidth(paneWidth: number): number {
+  return Math.max(16, Math.min(BUBBLE_MAX_WIDTH, paneWidth - 6));
+}
+
+function resolveBubbleMaxLines(paneHeight: number, dockLineCount: number): number {
+  const available = paneHeight - dockLineCount - 4;
+  return Math.max(2, Math.min(BUBBLE_MAX_LINES, available));
+}
+
+function resolveIdleSummaryWidth(paneWidth: number): number {
+  return Math.max(16, Math.min(IDLE_SUMMARY_WIDTH, paneWidth - 6));
 }
 
 function styleBubbleBorder(text: string, color: string, fading: boolean): string {
@@ -718,14 +780,6 @@ function currentPaneHeight(): number {
 
 function isPulseActive(state: Pick<SidecarState, "frameTick" | "pulseUntilTick">): boolean {
   return state.pulseUntilTick !== undefined && state.frameTick < state.pulseUntilTick;
-}
-
-function truncate(value: string, width: number): string {
-  if (visibleLength(value) <= width) {
-    return value;
-  }
-
-  return truncateDisplayWidth(value, width);
 }
 
 function trimTrailingEmptyLines(lines: string[]): string[] {

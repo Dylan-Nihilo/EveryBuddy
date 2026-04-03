@@ -2,31 +2,32 @@ import path from "node:path";
 
 import { OpenAICompatibleProvider } from "../soul/providers/openai.js";
 import type { AIProvider } from "../soul/providers/types.js";
+import { DEFAULT_OBSERVER_PROFILE } from "../soul/profile.js";
 import { resolveBuddyConfig } from "../storage/config.js";
-import type { BuddyLanguage, CompanionRecord } from "../types/companion.js";
+import type { BuddyLanguage, CompanionRecord, ObserverProfile } from "../types/companion.js";
 import type {
   CommandTracker,
+  CommandWindowEntry,
   EventImportance,
   MemoryEntry,
   ObservedCommand,
-  ObservedCommandCategory,
+  ObserverDecision,
   ShellEvent,
   SidecarState,
   SidecarStatus,
 } from "./types.js";
 
 const OBSERVER_SYSTEM_PROMPT = [
-  "You write the speech bubble text for a terminal companion.",
+  "You decide whether a terminal companion should speak in a small bubble.",
   "The companion is a separate watcher, not the main assistant.",
-  "Return only one short line of bubble text.",
-  "Do not narrate. Do not explain. Do not restate the raw command.",
+  "You receive a recent window of terminal commands plus the companion personality.",
+  "Return strict JSON only.",
 ].join(" ");
 const DEFAULT_LANGUAGE: BuddyLanguage = "zh";
 const DEFAULT_LLM_COOLDOWN_MS = 6_000;
 const DEDUPE_WINDOW_MS = 18_000;
 const MEMORY_LIMIT = 5;
-const MAX_REACTION_LENGTH = 72;
-const LONG_COMMAND_MS = 20_000;
+const COMMAND_WINDOW_LIMIT = 5;
 
 type ReactionMode = "clear" | "persistent" | "transient" | "preserve";
 
@@ -45,12 +46,13 @@ export interface ObserverReactionPlan {
 
 export interface ObserverPromptContext {
   companion: CompanionRecord;
+  commandWindow: CommandWindowEntry[];
   command: ObservedCommand;
   memory: MemoryEntry[];
   event: ShellEvent;
   language: BuddyLanguage;
-  durationMs: number | undefined;
-  importance: EventImportance;
+  status: SidecarStatus;
+  observerProfile: ObserverProfile;
 }
 
 export interface CompanionObserverOptions {
@@ -66,28 +68,25 @@ export class CompanionObserver {
   private readonly language: BuddyLanguage;
   private readonly provider: AIProvider | undefined;
   private readonly now: () => number;
-  private readonly llmCooldownMs: number;
+  private readonly llmCooldownMs: number | undefined;
 
   constructor(options: CompanionObserverOptions) {
     this.companion = options.companion;
     this.language = options.language ?? DEFAULT_LANGUAGE;
     this.provider = options.provider;
     this.now = options.now ?? Date.now;
-    this.llmCooldownMs = options.llmCooldownMs ?? DEFAULT_LLM_COOLDOWN_MS;
+    this.llmCooldownMs = options.llmCooldownMs;
   }
 
-  observe(event: ShellEvent, state: Pick<SidecarState, "memory" | "commandTrackers" | "status">): ObserverReactionPlan {
-    const command = event.command ? observeCommand(event.command, event.cwd, this.companion?.soul.name) : undefined;
+  observe(event: ShellEvent, state: Pick<SidecarState, "commandTrackers" | "status">): ObserverReactionPlan {
+    const command = event.command
+      ? observeCommand(event.command, event.cwd, this.companion?.soul.name)
+      : undefined;
     const tracker = state.commandTrackers[event.paneId];
     const effectiveCommand =
-      command ?? (tracker ? observeCommand(tracker.commandRaw, tracker.cwd, this.companion?.soul.name) : undefined);
+      command ??
+      (tracker ? observeCommand(tracker.commandRaw, tracker.cwd, this.companion?.soul.name) : undefined);
     const durationMs = tracker ? Math.max(0, event.timestamp - tracker.startedAt) : undefined;
-    const importance = classifyEventImportance({
-      event,
-      command: effectiveCommand,
-      memory: state.memory,
-      durationMs,
-    });
 
     if (event.type === "pane_active") {
       return {
@@ -105,149 +104,73 @@ export class CompanionObserver {
     }
 
     if (event.type === "input_update") {
-      if (!command) {
-        return {
-          status: "idle",
-          reactionMode: "clear",
-          reactionText: undefined,
-          importance: "silent",
-          command: undefined,
-          durationMs: undefined,
-          shouldGenerateModel: false,
-          shouldRemember: false,
-          addressedToBuddy: false,
-          pulse: false,
-        };
-      }
-
-      if (command.addressedToBuddy) {
-        return {
-          status: "typing",
-          reactionMode: "persistent",
-          reactionText: fallbackReactionForDirectAddress("input", this.language),
-          importance,
-          command,
-          durationMs: undefined,
-          shouldGenerateModel: false,
-          shouldRemember: false,
-          addressedToBuddy: true,
-          pulse: true,
-        };
-      }
-
       return {
-        status: "typing",
-        reactionMode: "clear",
+        status: command ? "typing" : "idle",
+        reactionMode: "preserve",
         reactionText: undefined,
-        importance,
+        importance: command?.addressedToBuddy ? "addressed" : command ? "low" : "silent",
         command,
         durationMs: undefined,
         shouldGenerateModel: false,
         shouldRemember: false,
-        addressedToBuddy: false,
-        pulse: false,
+        addressedToBuddy: command?.addressedToBuddy ?? false,
+        pulse: command?.addressedToBuddy ?? false,
       };
     }
 
     if (event.type === "command_start") {
-      if (!effectiveCommand) {
-        return {
-          status: "thinking",
-          reactionMode: "preserve",
-          reactionText: undefined,
-          importance: "low",
-          command: undefined,
-          durationMs: undefined,
-          shouldGenerateModel: false,
-          shouldRemember: false,
-          addressedToBuddy: false,
-          pulse: false,
-        };
-      }
-
       return {
         status: "thinking",
-        reactionMode:
-          importance === "high" || importance === "addressed" ? "transient" : "preserve",
-        reactionText:
-          importance === "high" || importance === "addressed"
-            ? fallbackReactionForStart(effectiveCommand, this.language)
-            : undefined,
-        importance,
+        reactionMode: "preserve",
+        reactionText: undefined,
+        importance: effectiveCommand?.addressedToBuddy ? "addressed" : "low",
         command: effectiveCommand,
         durationMs: undefined,
         shouldGenerateModel: false,
         shouldRemember: false,
-        addressedToBuddy: effectiveCommand.addressedToBuddy,
-        pulse: effectiveCommand.addressedToBuddy,
+        addressedToBuddy: effectiveCommand?.addressedToBuddy ?? false,
+        pulse: effectiveCommand?.addressedToBuddy ?? false,
       };
     }
-
-    if (!effectiveCommand) {
-      return {
-        status: "finished",
-        reactionMode: "clear",
-        reactionText: undefined,
-        importance: "silent",
-        command: undefined,
-        durationMs,
-        shouldGenerateModel: false,
-        shouldRemember: false,
-        addressedToBuddy: false,
-        pulse: false,
-      };
-    }
-
-    const shouldGenerateModel = importance === "high" || importance === "addressed";
-    const reactionText =
-      importance === "silent"
-        ? undefined
-        : fallbackReactionForEnd({
-            command: effectiveCommand,
-            exitCode: event.exitCode,
-            language: this.language,
-            durationMs,
-          });
 
     return {
       status: "finished",
-      reactionMode: reactionText ? "transient" : "clear",
-      reactionText,
-      importance,
+      reactionMode: "clear",
+      reactionText: undefined,
+      importance: effectiveCommand?.addressedToBuddy ? "addressed" : "low",
       command: effectiveCommand,
       durationMs,
-      shouldGenerateModel,
-      shouldRemember:
-        importance === "high" || importance === "addressed" || (event.exitCode ?? 0) !== 0,
-      addressedToBuddy: effectiveCommand.addressedToBuddy,
-      pulse: shouldPulse(effectiveCommand, event.exitCode),
+      shouldGenerateModel: effectiveCommand !== undefined,
+      shouldRemember: false,
+      addressedToBuddy: effectiveCommand?.addressedToBuddy ?? false,
+      pulse: effectiveCommand?.addressedToBuddy ?? false,
     };
   }
 
-  async maybeGenerateReaction(
+  async maybeGenerateDecision(
     plan: ObserverReactionPlan,
     event: ShellEvent,
-    state: Pick<SidecarState, "memory" | "recentReaction" | "recentNotableReactionAt">,
-  ): Promise<string | undefined> {
+    state: Pick<
+      SidecarState,
+      "commandWindows" | "memory" | "recentReaction" | "recentNotableReactionAt" | "status"
+    >,
+  ): Promise<ObserverDecision | undefined> {
     if (!this.provider || !this.companion || !plan.shouldGenerateModel || !plan.command) {
       return undefined;
     }
 
+    const commandWindow = state.commandWindows[event.paneId] ?? [];
+    const profile = this.companion.soul.observerProfile ?? DEFAULT_OBSERVER_PROFILE;
     const now = this.now();
-    const bypassCooldown = plan.importance === "addressed" || (event.exitCode ?? 0) !== 0;
 
-    if (
-      !bypassCooldown &&
-      state.recentNotableReactionAt !== undefined &&
-      now - state.recentNotableReactionAt < this.llmCooldownMs
-    ) {
+    if (commandWindow.length < minimumWindowSize(profile)) {
       return undefined;
     }
 
+    const cooldownMs = this.llmCooldownMs ?? cooldownMsForProfile(profile);
     if (
-      state.recentReaction &&
-      now - state.recentReaction.at < DEDUPE_WINDOW_MS &&
-      state.recentReaction.category === plan.command.category
+      state.recentNotableReactionAt !== undefined &&
+      now - state.recentNotableReactionAt < cooldownMs
     ) {
       return undefined;
     }
@@ -256,27 +179,51 @@ export class CompanionObserver {
       const response = await this.provider.complete(
         buildObserverPrompt({
           companion: this.companion,
+          commandWindow,
           command: plan.command,
-          memory: selectRelevantMemoryEntries(state.memory, plan.command),
+          memory: selectRecentBubbleMemory(state.memory),
           event,
           language: this.language,
-          durationMs: plan.durationMs,
-          importance: plan.importance,
+          status: state.status,
+          observerProfile: profile,
         }),
       );
-      const normalized = normalizeObserverResponse(response, plan.command);
+      const decision = parseObserverDecision(response);
+      if (!decision.shouldSpeak || !decision.reaction) {
+        return undefined;
+      }
+
+      const normalized = normalizeObserverResponse(decision.reaction, commandWindow);
       if (!normalized) {
         return undefined;
       }
 
-      if (state.recentReaction && isNearDuplicateReaction(state.recentReaction.text, normalized)) {
+      if (
+        state.recentReaction &&
+        now - state.recentReaction.at < DEDUPE_WINDOW_MS &&
+        isNearDuplicateReaction(state.recentReaction.text, normalized)
+      ) {
         return undefined;
       }
 
-      return normalized;
+      return {
+        ...decision,
+        reaction: normalized,
+      };
     } catch {
       return undefined;
     }
+  }
+
+  async maybeGenerateReaction(
+    plan: ObserverReactionPlan,
+    event: ShellEvent,
+    state: Pick<
+      SidecarState,
+      "commandWindows" | "memory" | "recentReaction" | "recentNotableReactionAt" | "status"
+    >,
+  ): Promise<string | undefined> {
+    return (await this.maybeGenerateDecision(plan, event, state))?.reaction;
   }
 }
 
@@ -293,13 +240,13 @@ export async function createCompanionObserver(
     if (config.apiKey) {
       provider = new OpenAICompatibleProvider({
         apiKey: config.apiKey,
-        model: config.model,
+        model: config.observerModel ?? config.model,
         baseUrl: config.baseUrl,
         systemPrompt: OBSERVER_SYSTEM_PROMPT,
       });
     }
   } catch {
-    // Fall back to static reactions if runtime config cannot be resolved.
+    // Fall back to a silent observer when config is not available.
   }
 
   return new CompanionObserver({
@@ -316,16 +263,11 @@ export function observeCommand(
 ): ObservedCommand {
   const raw = command.trim();
   const normalized = normalizeCommand(raw);
-  const addressedToBuddy = isDirectBuddyAddress(normalized, companionName);
-  const category = classifyCommandCategory(normalized, addressedToBuddy);
-
   return {
     raw,
     normalized,
-    category,
-    significance: classifySignificance(category),
     cwdRole: describeCwdRole(cwd),
-    addressedToBuddy,
+    addressedToBuddy: isDirectBuddyAddress(normalized, companionName),
   };
 }
 
@@ -335,7 +277,7 @@ export function classifyEventImportance(params: {
   memory: MemoryEntry[];
   durationMs?: number | undefined;
 }): EventImportance {
-  const { event, command, memory, durationMs } = params;
+  const { event, command } = params;
 
   if (!command) {
     return "silent";
@@ -346,48 +288,55 @@ export function classifyEventImportance(params: {
   }
 
   if (event.type === "input_update") {
-    return isLowSignalCommand(command) ? "silent" : "low";
+    return "low";
   }
 
   if (event.type === "command_start") {
-    return isHighSignalCommand(command) ? "high" : "low";
+    return "low";
   }
 
-  if ((event.exitCode ?? 0) !== 0) {
-    return "high";
-  }
-
-  if ((durationMs ?? 0) >= LONG_COMMAND_MS) {
-    return "high";
-  }
-
-  if (isLowSignalCommand(command)) {
-    return "silent";
-  }
-
-  if (isRecentDuplicateSuccess(command, memory, event.timestamp)) {
-    return "silent";
-  }
-
-  return isHighSignalCommand(command) ? "high" : "low";
+  return "low";
 }
 
 export function buildCommandTracker(
   event: ShellEvent,
   command: ObservedCommand,
-  importance: EventImportance,
+  _importance: EventImportance,
 ): CommandTracker {
   return {
     paneId: event.paneId,
     commandRaw: command.raw,
     startedAt: event.timestamp,
     cwd: event.cwd,
-    category: command.category,
-    importance,
     addressedToBuddy: command.addressedToBuddy,
-    significance: command.significance,
     cwdRole: command.cwdRole,
   };
+}
+
+export function buildCommandWindowEntry(params: {
+  event: ShellEvent;
+  command: ObservedCommand;
+  durationMs?: number | undefined;
+}): CommandWindowEntry {
+  const { event, command, durationMs } = params;
+
+  return {
+    command: command.raw,
+    normalizedCommand: command.normalized,
+    cwd: event.cwd,
+    cwdRole: command.cwdRole,
+    exitCode: event.exitCode,
+    durationMs,
+    timestamp: event.timestamp,
+    addressedToBuddy: command.addressedToBuddy,
+  };
+}
+
+export function rememberCommandWindowEntry(
+  entries: CommandWindowEntry[],
+  entry: CommandWindowEntry,
+): CommandWindowEntry[] {
+  return [...entries, entry].slice(-COMMAND_WINDOW_LIMIT);
 }
 
 export function buildMemoryEntry(params: {
@@ -396,26 +345,32 @@ export function buildMemoryEntry(params: {
   importance: EventImportance;
   durationMs?: number | undefined;
   reactionText?: string | undefined;
+  topic?: string | undefined;
+  mood?: string | undefined;
 }): MemoryEntry {
-  const { event, command, importance, durationMs, reactionText } = params;
+  const { event, command, importance, durationMs, reactionText, topic, mood } = params;
 
   return {
     timestamp: event.timestamp,
     commandRaw: command.raw,
     commandNormalized: command.normalized,
-    category: command.category,
     cwd: event.cwd,
-    outcome: command.addressedToBuddy
-      ? "addressed"
-      : (event.exitCode ?? 0) === 0
-        ? "success"
-        : "failure",
+    cwdRole: command.cwdRole,
+    outcome:
+      command.addressedToBuddy
+        ? "addressed"
+        : event.exitCode === undefined
+          ? "unknown"
+          : event.exitCode === 0
+            ? "success"
+            : "failure",
+    exitCode: event.exitCode,
     durationMs,
     importance,
     reactionText,
     addressedToBuddy: command.addressedToBuddy,
-    significance: command.significance,
-    cwdRole: command.cwdRole,
+    topic,
+    mood,
   };
 }
 
@@ -423,35 +378,22 @@ export function rememberMemoryEntry(memory: MemoryEntry[], entry: MemoryEntry): 
   return [entry, ...memory].slice(0, MEMORY_LIMIT);
 }
 
-export function selectRelevantMemoryEntries(
-  memory: MemoryEntry[],
-  command: ObservedCommand,
-): MemoryEntry[] {
-  const preferred = memory.filter(
-    (entry) => entry.category === command.category || entry.cwdRole === command.cwdRole,
-  );
-
-  return (preferred.length > 0 ? preferred : memory).slice(0, 3);
-}
-
 export function buildObserverPrompt(context: ObserverPromptContext): string {
-  const { companion, command, event, memory, language, durationMs, importance } = context;
+  const { companion, commandWindow, command, memory, event, language, status, observerProfile } = context;
   const languageInstruction =
     language === "zh"
-      ? "Use Simplified Chinese. Keep it to one short sentence, ideally under 16 Chinese characters."
-      : "Use English. Keep it to one short sentence, under 12 words.";
-  const outcome =
-    command.addressedToBuddy
-      ? "The user addressed you directly."
-      : (event.exitCode ?? 0) === 0
-        ? "The command finished successfully."
-        : `The command failed with exit code ${event.exitCode ?? "unknown"}.`;
-  const durationText = durationMs !== undefined ? `${durationMs}ms` : "unknown";
+      ? "Use Simplified Chinese. Keep `reaction` to one short sentence, ideally under 16 Chinese characters."
+      : "Use English. Keep `reaction` to one short sentence, under 12 words.";
+  const recentWindow = commandWindow
+    .map((entry, index) => {
+      return `${index + 1}. command=${entry.command}; cwd=${entry.cwdRole}; exit=${entry.exitCode ?? "?"}; duration=${entry.durationMs ?? "?"}ms; addressed=${entry.addressedToBuddy ? "yes" : "no"}`;
+    })
+    .join("\n");
   const recentMemory =
     memory.length > 0
       ? memory
           .map((entry, index) => {
-            return `${index + 1}. ${entry.significance} in ${entry.cwdRole}; outcome=${entry.outcome}; reaction=${entry.reactionText ?? "(none)"}`;
+            return `${index + 1}. reaction=${entry.reactionText ?? "(none)"}; outcome=${entry.outcome}; topic=${entry.topic ?? "(none)"}; mood=${entry.mood ?? "(none)"}`;
           })
           .join("\n")
       : "(none)";
@@ -461,30 +403,69 @@ export function buildObserverPrompt(context: ObserverPromptContext): string {
     `You are ${companion.soul.name}. You are a separate watcher, not the main assistant.`,
     "",
     `Personality: ${companion.soul.personality}`,
-    `Current project role: ${command.cwdRole}`,
-    `Current significance: ${command.significance}`,
-    `Current category: ${command.category}`,
-    `Current importance: ${importance}`,
-    `Observed outcome: ${outcome}`,
-    `Observed duration: ${durationText}`,
-    `Original cwd: ${event.cwd}`,
+    `Observer voice: ${observerProfile.voice}`,
+    `Observer chattiness: ${observerProfile.chattiness}/5`,
+    `Observer sharpness: ${observerProfile.sharpness}/5`,
+    `Observer patience: ${observerProfile.patience}/5`,
+    `Current pane status: ${status}`,
+    `Latest cwd role: ${command.cwdRole}`,
+    `Latest command addressed you directly: ${command.addressedToBuddy ? "yes" : "no"}`,
+    `Latest command exit code: ${event.exitCode ?? "unknown"}`,
     "",
-    "Recent memory:",
+    "Recent command window (oldest to newest):",
+    recentWindow || "(none)",
+    "",
+    "Recent bubbles:",
     recentMemory,
     "",
     "Rules:",
-    "- React to the situation, not the raw command text.",
+    "- Decide whether the current command window is worth commenting on.",
+    "- React to the pattern and mood, not the raw command text.",
     "- Do not restate the command line.",
-    "- Return only the bubble text.",
-    "- One line only.",
-    "- No markdown, no code fences, no quotes, no prefixes, no explanations.",
+    "- Stay sharp and playful, never mean-spirited.",
+    "- Avoid repeating the recent bubbles.",
+    "- If this moment is not worth a bubble, set shouldSpeak to false and leave reaction empty.",
+    "- If speaking, reaction must be one line only.",
+    "- No markdown, no code fences, no quotes around reaction text.",
     `- ${languageInstruction}`,
+    "",
+    'Return strict JSON only: {"shouldSpeak":true|false,"reaction":"...","topic":"...","mood":"..."}',
   ].join("\n");
+}
+
+export function parseObserverDecision(response: string): ObserverDecision {
+  const stripped = stripMarkdownFence(response).trim();
+  const parsed = JSON.parse(stripped) as unknown;
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("Observer response must be a JSON object.");
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const shouldSpeak = record.shouldSpeak;
+  const reaction = normalizeOptionalField(record.reaction);
+  const topic = normalizeOptionalField(record.topic);
+  const mood = normalizeOptionalField(record.mood);
+
+  if (typeof shouldSpeak !== "boolean") {
+    throw new Error("Observer response `shouldSpeak` must be a boolean.");
+  }
+
+  if (shouldSpeak && (!reaction || reaction.length === 0)) {
+    throw new Error("Observer response `reaction` must be non-empty when `shouldSpeak` is true.");
+  }
+
+  return {
+    shouldSpeak,
+    ...(reaction ? { reaction } : {}),
+    ...(topic ? { topic } : {}),
+    ...(mood ? { mood } : {}),
+  };
 }
 
 export function normalizeObserverResponse(
   response: string,
-  command?: Pick<ObservedCommand, "normalized" | "raw">,
+  commandWindow?: CommandWindowEntry[],
 ): string | undefined {
   const stripped = stripMarkdownFence(response).trim();
   if (stripped.length === 0) {
@@ -505,196 +486,31 @@ export function normalizeObserverResponse(
     return undefined;
   }
 
-  if (isCommandEcho(normalized, command)) {
+  if (isCommandEcho(normalized, commandWindow)) {
     return undefined;
   }
 
-  return normalized.length <= MAX_REACTION_LENGTH
-    ? normalized
-    : `${normalized.slice(0, MAX_REACTION_LENGTH - 3).trimEnd()}...`;
+  return normalized;
 }
 
-export function fallbackReactionForDirectAddress(
-  phase: "input" | "finish",
-  language: BuddyLanguage,
-): string {
-  if (language === "en") {
-    return phase === "input" ? "I'm here." : "Yes. I'm listening.";
-  }
-
-  return phase === "input" ? "在呢。" : "嗯，我听着。";
+function selectRecentBubbleMemory(memory: MemoryEntry[]): MemoryEntry[] {
+  return memory.filter((entry) => entry.reactionText && entry.reactionText.length > 0).slice(0, 2);
 }
 
-function fallbackReactionForStart(
-  command: ObservedCommand,
-  language: BuddyLanguage,
-): string | undefined {
-  if (command.addressedToBuddy) {
-    return fallbackReactionForDirectAddress("input", language);
+function minimumWindowSize(profile: ObserverProfile): number {
+  if (profile.chattiness >= 4) {
+    return 1;
   }
 
-  if (language === "en") {
-    if (command.category === "test") {
-      return "Let's see if it holds.";
-    }
-
-    if (command.category === "build") {
-      return "Watching the build.";
-    }
-
-    if (command.category === "git_push") {
-      return "Careful push.";
-    }
-
-    if (command.category === "deploy") {
-      return "That one matters.";
-    }
-
-    if (command.category === "git_integrate") {
-      return "This could get messy.";
-    }
-
-    return "Watching closely.";
+  if (profile.chattiness >= 2) {
+    return 2;
   }
 
-  if (command.category === "test") {
-    return "看这轮测试。";
-  }
-
-  if (command.category === "build") {
-    return "盯着这次构建。";
-  }
-
-  if (command.category === "git_push") {
-    return "这次 push 别翻车。";
-  }
-
-  if (command.category === "deploy") {
-    return "这下要见真章了。";
-  }
-
-  if (command.category === "git_integrate") {
-    return "这步容易起火。";
-  }
-
-  return "我先盯着。";
+  return 3;
 }
 
-function fallbackReactionForEnd(params: {
-  command: ObservedCommand;
-  exitCode?: number | undefined;
-  language: BuddyLanguage;
-  durationMs?: number | undefined;
-}): string | undefined {
-  const { command, exitCode, language, durationMs } = params;
-  const failed = (exitCode ?? 0) !== 0;
-  const longRun = (durationMs ?? 0) >= LONG_COMMAND_MS;
-
-  if (command.addressedToBuddy) {
-    return fallbackReactionForDirectAddress("finish", language);
-  }
-
-  if (language === "en") {
-    if (failed) {
-      if (command.category === "test") {
-        return "Tests cracked.";
-      }
-
-      if (command.category === "build") {
-        return "Build fell apart.";
-      }
-
-      if (command.category === "git_integrate") {
-        return "That smells like conflicts.";
-      }
-
-      if (command.category === "git_push") {
-        return "Push bounced.";
-      }
-
-      return "That one needs another look.";
-    }
-
-    if (command.category === "test") {
-      return "This run came back green.";
-    }
-
-    if (command.category === "build") {
-      return "Build held together.";
-    }
-
-    if (command.category === "git_push") {
-      return "That push landed.";
-    }
-
-    if (command.category === "git_commit") {
-      return "Locked into history.";
-    }
-
-    if (command.category === "deploy") {
-      return "That one's out in the world.";
-    }
-
-    if (command.category === "install") {
-      return "Dependencies are in.";
-    }
-
-    if (command.category === "docker") {
-      return "Containers are moving.";
-    }
-
-    return longRun ? "Finally finished." : undefined;
-  }
-
-  if (failed) {
-    if (command.category === "test") {
-      return "测试炸了。";
-    }
-
-    if (command.category === "build") {
-      return "构建没过去。";
-    }
-
-    if (command.category === "git_integrate") {
-      return "冲突味有点重。";
-    }
-
-    if (command.category === "git_push") {
-      return "这次没推上去。";
-    }
-
-    return "这下得回头看看。";
-  }
-
-  if (command.category === "test") {
-    return "这轮全绿。";
-  }
-
-  if (command.category === "build") {
-    return "构建过了。";
-  }
-
-  if (command.category === "git_push") {
-    return "推上去了。";
-  }
-
-  if (command.category === "git_commit") {
-    return "这次记进历史了。";
-  }
-
-  if (command.category === "deploy") {
-    return "已经发出去了。";
-  }
-
-  if (command.category === "install") {
-    return "依赖进来了。";
-  }
-
-  if (command.category === "docker") {
-    return "容器那边动起来了。";
-  }
-
-  return longRun ? "终于跑完了。" : undefined;
+function cooldownMsForProfile(profile: ObserverProfile): number {
+  return Math.max(2_500, DEFAULT_LLM_COOLDOWN_MS + (3 - profile.chattiness) * 2_000);
 }
 
 function normalizeCommand(command?: string): string {
@@ -714,104 +530,6 @@ function isDirectBuddyAddress(normalized: string, companionName?: string): boole
   return normalized === buddyName || normalized.startsWith(`${buddyName} `);
 }
 
-function classifyCommandCategory(
-  normalized: string,
-  addressedToBuddy: boolean,
-): ObservedCommandCategory {
-  if (addressedToBuddy) {
-    return "addressed";
-  }
-
-  if (/^(ls|pwd|clear|echo|whoami)(\b|$)/.test(normalized)) {
-    return "routine";
-  }
-
-  if (/^(cd|z|zi|j)\b/.test(normalized)) {
-    return "navigation";
-  }
-
-  if (
-    /\b(pnpm|npm|yarn|bun)\s+(test|run test)\b/.test(normalized) ||
-    /\b(vitest|jest|pytest|go test|cargo test)\b/.test(normalized)
-  ) {
-    return "test";
-  }
-
-  if (
-    /\b(pnpm|npm|yarn|bun)\s+(run build|build)\b/.test(normalized) ||
-    /\b(next build|vite build|turbo build|tsc|cargo build)\b/.test(normalized)
-  ) {
-    return "build";
-  }
-
-  if (/\b(git)\s+(commit)\b/.test(normalized)) {
-    return "git_commit";
-  }
-
-  if (/\b(git)\s+(push)\b/.test(normalized)) {
-    return "git_push";
-  }
-
-  if (/\b(git)\s+(rebase|merge|cherry-pick|pull --rebase|pull)\b/.test(normalized)) {
-    return "git_integrate";
-  }
-
-  if (/\bgit\b/.test(normalized)) {
-    return "git";
-  }
-
-  if (
-    /\b(vercel|netlify|fly deploy|wrangler deploy|railway up|deploy)\b/.test(normalized)
-  ) {
-    return "deploy";
-  }
-
-  if (/\b(docker|docker-compose|podman)\b/.test(normalized)) {
-    return "docker";
-  }
-
-  if (
-    /\b(pnpm add|pnpm install|npm install|yarn add|brew install|pip install|uv add)\b/.test(
-      normalized,
-    )
-  ) {
-    return "install";
-  }
-
-  return "shell";
-}
-
-function classifySignificance(category: ObservedCommandCategory): string {
-  switch (category) {
-    case "addressed":
-      return "direct address from the user";
-    case "test":
-      return "quality check";
-    case "build":
-      return "build verification";
-    case "git_push":
-      return "delivery move";
-    case "git_commit":
-      return "history checkpoint";
-    case "git_integrate":
-      return "integration risk";
-    case "deploy":
-      return "release step";
-    case "docker":
-      return "runtime environment change";
-    case "install":
-      return "dependency change";
-    case "navigation":
-      return "moving around the project";
-    case "git":
-      return "source control work";
-    case "routine":
-      return "routine shell movement";
-    default:
-      return "general shell work";
-  }
-}
-
 function describeCwdRole(cwd: string): string {
   const home = process.env.HOME?.trim();
   if (home && cwd === home) {
@@ -820,58 +538,6 @@ function describeCwdRole(cwd: string): string {
 
   const base = path.basename(cwd);
   return base.length > 0 ? base : cwd;
-}
-
-function isLowSignalCommand(command: ObservedCommand): boolean {
-  if (command.category === "routine" || command.category === "navigation") {
-    return true;
-  }
-
-  return command.category === "git" && command.normalized.includes("git status");
-}
-
-function isHighSignalCommand(command: ObservedCommand): boolean {
-  return (
-    command.category === "addressed" ||
-    command.category === "test" ||
-    command.category === "build" ||
-    command.category === "git_commit" ||
-    command.category === "git_push" ||
-    command.category === "git_integrate" ||
-    command.category === "deploy" ||
-    command.category === "docker" ||
-    command.category === "install"
-  );
-}
-
-function isRecentDuplicateSuccess(
-  command: ObservedCommand,
-  memory: MemoryEntry[],
-  now: number,
-): boolean {
-  const latest = memory[0];
-  if (!latest) {
-    return false;
-  }
-
-  return (
-    latest.outcome === "success" &&
-    latest.commandNormalized === command.normalized &&
-    now - latest.timestamp < DEDUPE_WINDOW_MS
-  );
-}
-
-function shouldPulse(command: ObservedCommand, exitCode?: number | undefined): boolean {
-  if (command.addressedToBuddy) {
-    return true;
-  }
-
-  return (exitCode ?? 0) === 0 && (
-    command.category === "test" ||
-    command.category === "build" ||
-    command.category === "git_push" ||
-    command.category === "deploy"
-  );
 }
 
 function stripMarkdownFence(value: string): string {
@@ -904,31 +570,39 @@ function stripMatchingQuotes(value: string): string {
   return trimmed;
 }
 
-function isCommandEcho(
-  response: string,
-  command?: Pick<ObservedCommand, "normalized" | "raw">,
-): boolean {
-  if (!command) {
+function normalizeOptionalField(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isCommandEcho(response: string, commandWindow?: CommandWindowEntry[]): boolean {
+  if (!commandWindow || commandWindow.length === 0) {
     return false;
   }
 
   const normalizedResponse = normalizeCommand(response);
-  const normalizedCommand = normalizeCommand(command.normalized || command.raw);
-  if (normalizedCommand.length === 0) {
-    return false;
-  }
+  return commandWindow.some((entry) => {
+    const normalizedCommand = normalizeCommand(entry.normalizedCommand || entry.command);
+    if (normalizedCommand.length === 0) {
+      return false;
+    }
 
-  if (normalizedResponse === normalizedCommand || normalizedResponse.includes(normalizedCommand)) {
-    return true;
-  }
+    if (normalizedResponse === normalizedCommand || normalizedResponse.includes(normalizedCommand)) {
+      return true;
+    }
 
-  const commandTokens = normalizedCommand.split(" ").filter((token) => token.length >= 3);
-  if (commandTokens.length === 0) {
-    return false;
-  }
+    const commandTokens = normalizedCommand.split(" ").filter((token) => token.length >= 3);
+    if (commandTokens.length === 0) {
+      return false;
+    }
 
-  const matchedTokens = commandTokens.filter((token) => normalizedResponse.includes(token)).length;
-  return matchedTokens >= Math.min(2, commandTokens.length);
+    const matchedTokens = commandTokens.filter((token) => normalizedResponse.includes(token)).length;
+    return matchedTokens >= Math.min(2, commandTokens.length);
+  });
 }
 
 function isNearDuplicateReaction(previous: string, next: string): boolean {

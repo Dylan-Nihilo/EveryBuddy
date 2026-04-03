@@ -14,6 +14,7 @@ test("getCardOutput prompts the user to hatch when no persisted companion exists
   try {
     const output = await getCardOutput(storageDir);
     assert.equal(output, NO_COMPANION_MESSAGE);
+    assert.equal(output, "No companion found. Run `buddy` to hatch one.");
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }
@@ -51,6 +52,12 @@ test("renderCompanionCard surfaces rarity and companion identity prominently", (
     soul: {
       name: "Sassy Tanuki",
       personality: "嘴很毒，但观察力很准。",
+      observerProfile: {
+        voice: "playful",
+        chattiness: 4,
+        sharpness: 4,
+        patience: 2,
+      },
       modelUsed: "qwen3.5-plus",
     },
     createdAt: "2026-04-02T08:09:26.636Z",

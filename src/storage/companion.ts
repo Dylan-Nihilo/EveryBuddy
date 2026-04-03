@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { DEFAULT_OBSERVER_PROFILE, parseOptionalObserverProfile } from "../soul/profile.js";
 import { companionFilePath, defaultStorageDir } from "./paths.js";
 import type {
   ColorPalette,
@@ -113,6 +114,7 @@ function parseCompanionSoul(value: unknown): CompanionSoul {
   }
 
   const { name, personality, modelUsed } = value;
+  const observerProfile = parseOptionalObserverProfile(value.observerProfile);
 
   if (typeof name !== "string" || name.trim().length === 0) {
     throw new Error("Companion soul `name` must be a non-empty string.");
@@ -129,6 +131,7 @@ function parseCompanionSoul(value: unknown): CompanionSoul {
   return {
     name: name.trim(),
     personality: personality.trim(),
+    observerProfile: observerProfile ?? { ...DEFAULT_OBSERVER_PROFILE },
     modelUsed: modelUsed.trim(),
   };
 }

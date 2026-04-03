@@ -17,6 +17,12 @@ test("writeCompanionRecord persists and readCompanionRecord restores the full re
     soul: {
       name: "Mochi",
       personality: "Calm, observant, and slightly judgmental about messy git history.",
+      observerProfile: {
+        voice: "dry",
+        chattiness: 3,
+        sharpness: 3,
+        patience: 3,
+      },
       modelUsed: "gpt-4o-mini",
     },
     createdAt: "2026-04-02T00:00:00.000Z",

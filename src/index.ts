@@ -8,18 +8,27 @@ import { runDetachCommand } from "./cli/detach.js";
 import { runEventCommand } from "./cli/event.js";
 import { runHatchCommand } from "./cli/hatch.js";
 import { runInitCommand } from "./cli/init.js";
+import { runInstallTmuxCommand } from "./cli/install.js";
 import { runSidecarCliCommand } from "./cli/sidecar.js";
+import { runBuddyHomeCommand, runSetupCommand } from "./cli/setup.js";
 
 const program = new Command();
 
 program
   .name("buddy")
-  .description("An open terminal AI companion with deterministic bones and future AI soul.")
+  .description("A terminal companion that hatches on first run and follows you through tmux.")
   .version("0.1.0");
 
 program
   .command("card")
   .description("Render the persisted buddy card.")
+  .action(async () => {
+    await runCardCommand();
+  });
+
+program
+  .command("pet")
+  .description("Show the current companion card.")
   .action(async () => {
     await runCardCommand();
   });
@@ -44,6 +53,39 @@ program
   });
 
 program
+  .command("setup")
+  .description("Run the first-time EveryBuddy setup flow.")
+  .option("-u, --user <id>", "Deterministic user id seed")
+  .option("--model <id>", "OpenAI-compatible model id")
+  .option("--base-url <url>", "OpenAI-compatible API base URL")
+  .option("--api-key <key>", "OpenAI-compatible API key")
+  .action(async (options) => {
+    await runSetupCommand({ ...options, purpose: "setup" });
+  });
+
+program
+  .command("rehatch")
+  .description("Draw a new companion and replace the current one.")
+  .option("-u, --user <id>", "Deterministic user id seed")
+  .option("--model <id>", "OpenAI-compatible model id")
+  .option("--base-url <url>", "OpenAI-compatible API base URL")
+  .option("--api-key <key>", "OpenAI-compatible API key")
+  .action(async (options) => {
+    await runSetupCommand({ ...options, purpose: "rehatch" });
+  });
+
+program
+  .command("install <target>")
+  .description("Install EveryBuddy into a supported terminal host.")
+  .action(async (target) => {
+    if (target !== "tmux") {
+      throw new Error("Only `buddy install tmux` is supported right now.");
+    }
+
+    await runInstallTmuxCommand();
+  });
+
+program
   .command("attach")
   .description("Attach an EveryBuddy sidecar to the current tmux window.")
   .option("--quiet", "Silence attach output")
@@ -63,7 +105,7 @@ program
   .command("gallery")
   .description("Placeholder for species gallery export.")
   .action(() => {
-    process.stdout.write("Gallery export is not implemented yet. Start with `buddy card`.\n");
+    process.stdout.write("Gallery export is not implemented yet. Start with `buddy pet`.\n");
   });
 
 program
@@ -88,7 +130,7 @@ program
 
 async function main(): Promise<void> {
   if (process.argv.length <= 2) {
-    await runCardCommand();
+    await runBuddyHomeCommand();
     return;
   }
 

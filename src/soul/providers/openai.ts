@@ -19,6 +19,7 @@ export class OpenAICompatibleProvider implements AIProvider {
   private readonly baseUrl: string;
   private readonly systemPrompt: string;
   private readonly requestTimeoutMs: number;
+  private readonly disableThinking: boolean;
 
   constructor(options: OpenAICompatibleProviderOptions) {
     this.modelId = options.model;
@@ -26,6 +27,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.systemPrompt = options.systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
     this.requestTimeoutMs = normalizeTimeoutMs(options.requestTimeoutMs);
+    this.disableThinking = shouldDisableThinking(this.baseUrl);
   }
 
   async complete(prompt: string): Promise<string> {
@@ -33,6 +35,18 @@ export class OpenAICompatibleProvider implements AIProvider {
     const timeout = setTimeout(() => {
       controller.abort();
     }, this.requestTimeoutMs);
+
+    const requestBody: Record<string, unknown> = {
+      model: this.modelId,
+      messages: [
+        { role: "system", content: this.systemPrompt },
+        { role: "user", content: prompt },
+      ],
+    };
+
+    if (this.disableThinking) {
+      requestBody.enable_thinking = false;
+    }
 
     let response: Response;
     try {
@@ -42,13 +56,7 @@ export class OpenAICompatibleProvider implements AIProvider {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify({
-          model: this.modelId,
-          messages: [
-            { role: "system", content: this.systemPrompt },
-            { role: "user", content: prompt },
-          ],
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
     } catch (error) {
@@ -105,6 +113,15 @@ function normalizeTimeoutMs(value?: number): number {
   }
 
   return Math.floor(value);
+}
+
+export function shouldDisableThinking(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl);
+    return url.hostname.endsWith("dashscope.aliyuncs.com");
+  } catch {
+    return false;
+  }
 }
 
 function isAbortError(error: unknown): boolean {

@@ -1,4 +1,5 @@
 import { getDumpStat, getPeakStat } from "../bones/stats.js";
+import { parseObserverProfile } from "./profile.js";
 import type {
   BuddyLanguage,
   CompanionBones,
@@ -19,6 +20,7 @@ export async function hatchSoul(
   return {
     name: parsed.name,
     personality: parsed.personality,
+    observerProfile: parsed.observerProfile,
     modelUsed: provider.modelId,
   };
 }
@@ -36,7 +38,9 @@ export function buildCompanionRecord(
   };
 }
 
-export function parseHatchResponse(response: string): Pick<CompanionSoul, "name" | "personality"> {
+export function parseHatchResponse(
+  response: string,
+): Pick<CompanionSoul, "name" | "personality" | "observerProfile"> {
   const stripped = stripMarkdownFence(response);
   const parsed = JSON.parse(stripped) as unknown;
 
@@ -47,6 +51,7 @@ export function parseHatchResponse(response: string): Pick<CompanionSoul, "name"
   const record = parsed as Record<string, unknown>;
   const name = normalizeField(record.name);
   const personality = normalizeField(record.personality);
+  const observerProfile = parseObserverProfile(record.observerProfile);
 
   if (name.length === 0 || name.length > 40) {
     throw new Error("Hatch response `name` must be between 1 and 40 characters.");
@@ -56,7 +61,7 @@ export function parseHatchResponse(response: string): Pick<CompanionSoul, "name"
     throw new Error("Hatch response `personality` must be between 1 and 300 characters.");
   }
 
-  return { name, personality };
+  return { name, personality, observerProfile };
 }
 
 export function buildHatchPrompt(bones: CompanionBones, language: BuddyLanguage): string {
@@ -83,9 +88,11 @@ export function buildHatchPrompt(bones: CompanionBones, language: BuddyLanguage)
     "- Personality must be 2-3 sentences.",
     "- Personality must reference the peak stat as a defining trait.",
     "- Personality must reference the dump stat as a charming flaw.",
+    "- Observer profile must match the same personality and control how often the pet comments.",
+    '- Observer profile JSON shape: {"voice":"quiet|dry|playful|deadpan","chattiness":1-5,"sharpness":1-5,"patience":1-5}',
     `- ${languageInstruction}`,
     "- Return only valid JSON.",
-    '- JSON shape: {"name":"...","personality":"..."}',
+    '- JSON shape: {"name":"...","personality":"...","observerProfile":{"voice":"...","chattiness":3,"sharpness":3,"patience":3}}',
   ].join("\n");
 }
 

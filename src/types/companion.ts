@@ -1,6 +1,7 @@
 export type StatName = "GRIT" | "FOCUS" | "CHAOS" | "WIT" | "SASS";
 export type BuddyProvider = "openai";
 export type BuddyLanguage = "zh" | "en";
+export type ObserverVoice = "quiet" | "dry" | "playful" | "deadpan";
 
 export interface ColorPalette {
   primary: string;
@@ -51,6 +52,7 @@ export interface CompanionBones {
 export interface BuddyConfig {
   provider?: BuddyProvider | undefined;
   model?: string | undefined;
+  observerModel?: string | undefined;
   apiKey?: string | undefined;
   baseUrl?: string | undefined;
   language?: BuddyLanguage | undefined;
@@ -59,6 +61,7 @@ export interface BuddyConfig {
 export interface ResolvedBuddyConfig {
   provider: BuddyProvider;
   model: string;
+  observerModel: string | undefined;
   apiKey: string | undefined;
   baseUrl: string | undefined;
   language: BuddyLanguage;
@@ -70,9 +73,17 @@ export interface HatchReadyConfig extends ResolvedBuddyConfig {
   model: string;
 }
 
+export interface ObserverProfile {
+  voice: ObserverVoice;
+  chattiness: 1 | 2 | 3 | 4 | 5;
+  sharpness: 1 | 2 | 3 | 4 | 5;
+  patience: 1 | 2 | 3 | 4 | 5;
+}
+
 export interface CompanionSoul {
   name: string;
   personality: string;
+  observerProfile: ObserverProfile;
   modelUsed: string;
 }
 

@@ -1,7 +1,7 @@
 import { readCompanionRecord } from "../storage/companion.js";
 import { renderCompanionCard } from "../render/card.js";
 
-export const NO_COMPANION_MESSAGE = "No companion found. Run `buddy hatch` first.";
+export const NO_COMPANION_MESSAGE = "No companion found. Run `buddy` to hatch one.";
 
 export async function runCardCommand(): Promise<void> {
   const output = await getCardOutput();

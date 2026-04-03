@@ -3,14 +3,17 @@ import test from "node:test";
 
 import {
   buildCommandTracker,
+  buildCommandWindowEntry,
+  buildMemoryEntry,
   buildObserverPrompt,
-  classifyEventImportance,
   CompanionObserver,
   normalizeObserverResponse,
   observeCommand,
+  parseObserverDecision,
+  rememberCommandWindowEntry,
   rememberMemoryEntry,
 } from "../src/runtime/observer.js";
-import type { MemoryEntry, ShellEvent } from "../src/runtime/types.js";
+import type { CommandWindowEntry, MemoryEntry, ShellEvent } from "../src/runtime/types.js";
 import type { CompanionRecord } from "../src/types/companion.js";
 
 const companion: CompanionRecord = {
@@ -45,57 +48,115 @@ const companion: CompanionRecord = {
   soul: {
     name: "Snarky Tanuki",
     personality: "Sharp-tongued, observant, and quietly fond of clean wins.",
+    observerProfile: {
+      voice: "playful",
+      chattiness: 4,
+      sharpness: 4,
+      patience: 2,
+    },
     modelUsed: "qwen3.5-plus",
   },
 };
 
-test("buildObserverPrompt frames the buddy as a separate watcher without parroting the raw command", () => {
+test("buildObserverPrompt frames the buddy as a separate watcher and includes structured soul plus command window", () => {
   const prompt = buildObserverPrompt({
     companion,
-    command: observeCommand("pnpm test", "/tmp/project", companion.soul.name),
-    memory: [],
+    command: observeCommand("pnpm dev", "/tmp/project", companion.soul.name),
+    commandWindow: [
+      {
+        command: "pnpm install",
+        normalizedCommand: "pnpm install",
+        cwd: "/tmp/project",
+        cwdRole: "project",
+        exitCode: 0,
+        durationMs: 420,
+        timestamp: 900,
+        addressedToBuddy: false,
+      },
+      {
+        command: "pnpm dev",
+        normalizedCommand: "pnpm dev",
+        cwd: "/tmp/project",
+        cwdRole: "project",
+        exitCode: 1,
+        durationMs: 1200,
+        timestamp: 1_000,
+        addressedToBuddy: false,
+      },
+    ],
+    memory: [
+      {
+        timestamp: 800,
+        commandRaw: "pnpm build",
+        commandNormalized: "pnpm build",
+        cwd: "/tmp/project",
+        cwdRole: "project",
+        outcome: "failure",
+        exitCode: 1,
+        durationMs: 600,
+        importance: "low",
+        reactionText: "工具链今天脾气不小。",
+        addressedToBuddy: false,
+        topic: "frontend tooling spiral",
+        mood: "dry",
+      },
+    ],
     event: {
       type: "command_end",
       paneId: "%1",
       windowId: "@1",
       cwd: "/tmp/project",
-      command: "pnpm test",
-      exitCode: 0,
+      command: "pnpm dev",
+      exitCode: 1,
       timestamp: 1_000,
     },
     language: "zh",
-    durationMs: 2_200,
-    importance: "high",
+    status: "finished",
+    observerProfile: companion.soul.observerProfile,
   });
 
   assert.match(prompt, /You are Snarky Tanuki/);
-  assert.match(prompt, /separate watcher, not the main assistant/);
-  assert.match(prompt, /Current category: test/);
-  assert.doesNotMatch(prompt, /Observed command:/);
-  assert.match(prompt, /Use Simplified Chinese/);
+  assert.match(prompt, /Observer voice: playful/);
+  assert.match(prompt, /Observer chattiness: 4\/5/);
+  assert.match(prompt, /Recent command window/);
+  assert.match(prompt, /Return strict JSON only/);
+  assert.doesNotMatch(prompt, /Current category:/);
 });
 
-test("normalizeObserverResponse strips fences but rejects command echo", () => {
-  assert.equal(
-    normalizeObserverResponse('```text\n"干得不错。"\n第二行忽略\n```'),
-    "干得不错。",
+test("parseObserverDecision reads structured JSON and normalizeObserverResponse rejects command echo", () => {
+  const decision = parseObserverDecision(
+    '```json\n{"shouldSpeak":true,"reaction":"工具链今天真拧巴。","topic":"frontend spiral","mood":"dry"}\n```',
   );
 
+  assert.equal(decision.shouldSpeak, true);
+  assert.equal(decision.reaction, "工具链今天真拧巴。");
+  assert.equal(decision.topic, "frontend spiral");
+
   assert.equal(
-    normalizeObserverResponse("pnpm test passed", {
-      raw: "pnpm test",
-      normalized: "pnpm test",
-    }),
+    normalizeObserverResponse("pnpm dev failed", [
+      {
+        command: "pnpm dev",
+        normalizedCommand: "pnpm dev",
+        cwd: "/tmp/project",
+        cwdRole: "project",
+        exitCode: 1,
+        durationMs: 200,
+        timestamp: 1_000,
+        addressedToBuddy: false,
+      },
+    ]),
     undefined,
   );
+
+  const longReaction = "你今天已经把同一套命令折腾了三轮，工具链都快开始怀疑你是不是故意的了。";
+  assert.equal(normalizeObserverResponse(longReaction), longReaction);
 });
 
-test("observer stays quiet for generic typing but reacts when called by name", () => {
+test("observer only perks up during input and does not emit hardcoded speech", () => {
   const observer = new CompanionObserver({
     companion,
   });
   const baseState = {
-    memory: [] as MemoryEntry[],
     commandTrackers: {},
     status: "idle" as const,
   };
@@ -107,43 +168,17 @@ test("observer stays quiet for generic typing but reacts when called by name", (
         paneId: "%1",
         windowId: "@1",
         cwd: "/tmp/project",
-        command: "git push origin main",
+        command: "Snarky Tanuki look at this",
         timestamp: 1_000,
       },
       baseState,
     ),
     {
       status: "typing",
-      reactionMode: "clear",
+      reactionMode: "preserve",
       reactionText: undefined,
-      importance: "low",
-      command: observeCommand("git push origin main", "/tmp/project", companion.soul.name),
-      durationMs: undefined,
-      shouldGenerateModel: false,
-      shouldRemember: false,
-      addressedToBuddy: false,
-      pulse: false,
-    },
-  );
-
-  assert.deepEqual(
-    observer.observe(
-      {
-        type: "input_update",
-        paneId: "%1",
-        windowId: "@1",
-        cwd: "/tmp/project",
-        command: "Snarky Tanuki you there?",
-        timestamp: 1_100,
-      },
-      baseState,
-    ),
-    {
-      status: "typing",
-      reactionMode: "persistent",
-      reactionText: "在呢。",
       importance: "addressed",
-      command: observeCommand("Snarky Tanuki you there?", "/tmp/project", companion.soul.name),
+      command: observeCommand("Snarky Tanuki look at this", "/tmp/project", companion.soul.name),
       durationMs: undefined,
       shouldGenerateModel: false,
       shouldRemember: false,
@@ -151,68 +186,26 @@ test("observer stays quiet for generic typing but reacts when called by name", (
       pulse: true,
     },
   );
-
-  assert.deepEqual(
-    observer.observe(
-      {
-        type: "pane_active",
-        paneId: "%2",
-        windowId: "@1",
-        cwd: "/tmp/project",
-        timestamp: 1_200,
-      },
-      {
-        ...baseState,
-        status: "typing",
-      },
-    ),
-    {
-      status: "idle",
-      reactionMode: "clear",
-      reactionText: undefined,
-      importance: "silent",
-      command: undefined,
-      durationMs: undefined,
-      shouldGenerateModel: false,
-      shouldRemember: false,
-      addressedToBuddy: false,
-      pulse: false,
-    },
-  );
 });
 
-test("classifier silences low-signal work, remembers notable work, and trims memory", () => {
-  const lowSignal = classifyEventImportance({
-    event: {
-      type: "command_end",
-      paneId: "%1",
-      windowId: "@1",
+test("rememberCommandWindowEntry and rememberMemoryEntry keep only recent history", () => {
+  let windowEntries: CommandWindowEntry[] = [];
+  for (let index = 0; index < 8; index += 1) {
+    windowEntries = rememberCommandWindowEntry(windowEntries, {
+      command: `cmd-${index}`,
+      normalizedCommand: `cmd-${index}`,
       cwd: "/tmp/project",
-      command: "pwd",
-      exitCode: 0,
-      timestamp: 1_000,
-    },
-    command: observeCommand("pwd", "/tmp/project", companion.soul.name),
-    memory: [],
-    durationMs: 5,
-  });
-  assert.equal(lowSignal, "silent");
+      cwdRole: "project",
+      exitCode: index % 2,
+      durationMs: 10,
+      timestamp: index,
+      addressedToBuddy: false,
+    });
+  }
 
-  const notable = classifyEventImportance({
-    event: {
-      type: "command_end",
-      paneId: "%1",
-      windowId: "@1",
-      cwd: "/tmp/project",
-      command: "pnpm test",
-      exitCode: 0,
-      timestamp: 2_000,
-    },
-    command: observeCommand("pnpm test", "/tmp/project", companion.soul.name),
-    memory: [],
-    durationMs: 2_500,
-  });
-  assert.equal(notable, "high");
+  assert.equal(windowEntries.length, 5);
+  assert.equal(windowEntries[0]?.command, "cmd-3");
+  assert.equal(windowEntries[4]?.command, "cmd-7");
 
   let memory: MemoryEntry[] = [];
   for (let index = 0; index < 7; index += 1) {
@@ -220,15 +213,16 @@ test("classifier silences low-signal work, remembers notable work, and trims mem
       timestamp: index,
       commandRaw: `cmd-${index}`,
       commandNormalized: `cmd-${index}`,
-      category: "shell",
       cwd: "/tmp/project",
+      cwdRole: "project",
       outcome: "success",
+      exitCode: 0,
       durationMs: 10,
-      importance: "high",
+      importance: "low",
       reactionText: `r-${index}`,
       addressedToBuddy: false,
-      significance: "general shell work",
-      cwdRole: "project",
+      topic: `topic-${index}`,
+      mood: "dry",
     });
   }
 
@@ -237,7 +231,11 @@ test("classifier silences low-signal work, remembers notable work, and trims mem
   assert.equal(memory[4]?.commandRaw, "cmd-2");
 });
 
-test("CompanionObserver uses the model for command_end and respects cooldown state", async () => {
+test("CompanionObserver waits for minimum window size, honors cooldown, and accepts varied follow-up lines", async () => {
+  const replies = [
+    '{"shouldSpeak":true,"reaction":"你又在和工具链较劲。","topic":"frontend spiral","mood":"playful"}',
+    '{"shouldSpeak":true,"reaction":"今天这套前端栈不太给你面子。","topic":"frontend spiral","mood":"playful"}',
+  ];
   let prompt = "";
   let now = 10_000;
 
@@ -250,7 +248,7 @@ test("CompanionObserver uses the model for command_end and respects cooldown sta
       modelId: "mock-model",
       async complete(nextPrompt: string): Promise<string> {
         prompt = nextPrompt;
-        return '```text\n"测试全绿。"\n```';
+        return replies.shift() ?? '{"shouldSpeak":false}';
       },
     },
   });
@@ -260,7 +258,7 @@ test("CompanionObserver uses the model for command_end and respects cooldown sta
     paneId: "%1",
     windowId: "@1",
     cwd: "/tmp/project",
-    command: "pnpm test",
+    command: "pnpm dev",
     timestamp: 9_000,
   };
   const endEvent: ShellEvent = {
@@ -268,36 +266,145 @@ test("CompanionObserver uses the model for command_end and respects cooldown sta
     paneId: "%1",
     windowId: "@1",
     cwd: "/tmp/project",
-    command: "pnpm test",
-    exitCode: 0,
+    command: "pnpm dev",
+    exitCode: 1,
     timestamp: 10_000,
   };
-  const command = observeCommand("pnpm test", "/tmp/project", companion.soul.name);
-  const tracker = buildCommandTracker(startEvent, command, "high");
+  const command = observeCommand("pnpm dev", "/tmp/project", companion.soul.name);
+  const tracker = buildCommandTracker(startEvent, command, "low");
   const plan = observer.observe(endEvent, {
-    memory: [],
     commandTrackers: { "%1": tracker },
     status: "thinking",
   });
 
-  assert.equal(await observer.maybeGenerateReaction(plan, endEvent, {
-    memory: [],
+  const singleEntryState = {
+    commandWindows: {
+      "%1": [
+        buildCommandWindowEntry({
+          event: endEvent,
+          command,
+          durationMs: 1_000,
+        }),
+      ],
+    },
+    memory: [] as MemoryEntry[],
     recentReaction: undefined,
     recentNotableReactionAt: undefined,
-  }), "测试全绿。");
-  assert.match(prompt, /Current category: test/);
-  assert.doesNotMatch(prompt, /Observed command:/);
+    status: "finished" as const,
+  };
+  assert.equal((await observer.maybeGenerateDecision(plan, endEvent, singleEntryState))?.reaction, "你又在和工具链较劲。");
+  assert.match(prompt, /Recent command window/);
+  assert.match(prompt, /Observer sharpness: 4\/5/);
 
-  assert.equal(await observer.maybeGenerateReaction(plan, endEvent, {
-    memory: [],
-    recentReaction: undefined,
-    recentNotableReactionAt: 10_000,
-  }), undefined);
+  assert.equal(
+    await observer.maybeGenerateDecision(plan, endEvent, {
+      ...singleEntryState,
+      recentNotableReactionAt: 10_000,
+    }),
+    undefined,
+  );
 
   now = 14_500;
-  assert.equal(await observer.maybeGenerateReaction(plan, endEvent, {
-    memory: [],
-    recentReaction: undefined,
+  const followUp = await observer.maybeGenerateDecision(plan, endEvent, {
+    ...singleEntryState,
+    recentReaction: {
+      text: "你又在和工具链较劲。",
+      at: 10_000,
+      topic: "frontend spiral",
+      mood: "playful",
+    },
     recentNotableReactionAt: 10_000,
-  }), "测试全绿。");
+  });
+  assert.equal(followUp?.reaction, "今天这套前端栈不太给你面子。");
+});
+
+test("CompanionObserver accepts shouldSpeak=false and stays silent", async () => {
+  const quietCompanion: CompanionRecord = {
+    ...companion,
+    soul: {
+      ...companion.soul,
+      observerProfile: {
+        voice: "quiet",
+        chattiness: 1,
+        sharpness: 2,
+        patience: 5,
+      },
+    },
+  };
+  const observer = new CompanionObserver({
+    companion: quietCompanion,
+    provider: {
+      modelId: "mock-model",
+      async complete(): Promise<string> {
+        return '{"shouldSpeak":false,"topic":"nothing notable"}';
+      },
+    },
+  });
+  const command = observeCommand("pnpm dev", "/tmp/project", quietCompanion.soul.name);
+  const endEvent: ShellEvent = {
+    type: "command_end",
+    paneId: "%1",
+    windowId: "@1",
+    cwd: "/tmp/project",
+    command: "pnpm dev",
+    exitCode: 1,
+    timestamp: 2_000,
+  };
+  const plan = observer.observe(endEvent, {
+    commandTrackers: {
+      "%1": {
+        paneId: "%1",
+        commandRaw: "pnpm dev",
+        startedAt: 1_000,
+        cwd: "/tmp/project",
+        addressedToBuddy: false,
+        cwdRole: "project",
+      },
+    },
+    status: "thinking",
+  });
+
+  assert.equal(
+    await observer.maybeGenerateDecision(plan, endEvent, {
+      commandWindows: {
+        "%1": [
+          {
+            command: "pnpm dev",
+            normalizedCommand: "pnpm dev",
+            cwd: "/tmp/project",
+            cwdRole: "project",
+            exitCode: 1,
+            durationMs: 1_000,
+            timestamp: 2_000,
+            addressedToBuddy: false,
+          },
+          {
+            command: "pnpm build",
+            normalizedCommand: "pnpm build",
+            cwd: "/tmp/project",
+            cwdRole: "project",
+            exitCode: 0,
+            durationMs: 400,
+            timestamp: 1_000,
+            addressedToBuddy: false,
+          },
+          {
+            command: "pnpm test",
+            normalizedCommand: "pnpm test",
+            cwd: "/tmp/project",
+            cwdRole: "project",
+            exitCode: 0,
+            durationMs: 300,
+            timestamp: 500,
+            addressedToBuddy: false,
+          },
+        ],
+      },
+      memory: [],
+      recentReaction: undefined,
+      recentNotableReactionAt: undefined,
+      status: "finished",
+    }),
+    undefined,
+  );
 });
