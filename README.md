@@ -1,76 +1,101 @@
-# EveryBuddy
+<p align="center">
+  <img src="docs/screenshots/homepage.png" alt="EveryBuddy" width="720" />
+</p>
 
-A terminal companion pet that hatches from a gacha draw, gets an AI-written personality, and lives in your tmux sidecar.
+<h1 align="center">EveryBuddy</h1>
 
-![Homepage](docs/screenshots/homepage.png)
+<p align="center">
+  <strong>Gacha-hatched terminal companions that live in your tmux.</strong><br>
+  Draw a pet. AI writes its soul. It watches your shell and reacts.
+</p>
 
-## How it works
+<p align="center">
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#how-it-works">How It Works</a> ·
+  <a href="#rarity-tiers">Rarity</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#development">Development</a>
+</p>
 
-1. **Gacha draw** — Your system username seeds a deterministic PRNG. Species, rarity, stats, and appearance are locked to your identity.
-2. **Soul imprint** — An LLM writes a unique name, personality, and observer profile for your companion.
-3. **Sidecar runtime** — The companion lives in a tmux split pane, watches your shell commands via Unix socket, and occasionally reacts with speech bubbles.
+---
 
-## Quick start
+## Prerequisites
+
+- **[Node.js](https://nodejs.org/)** >= 20
+- **[tmux](https://github.com/tmux/tmux/wiki)** — the companion lives here
+- **zsh** — shell hooks only support zsh for now
+
+## Quick Start
 
 ```bash
 npm install -g everybuddy
-buddy                    # first-run: gacha draw + soul imprint
-buddy install tmux       # hook into your shell
+
+buddy                    # gacha draw → soul imprint → your companion is born
+buddy install tmux       # hook into zsh + tmux
 ```
 
-Open a new tmux window and your companion appears.
+Open a new tmux window. Your companion is there.
 
-## Companion cards
-
-Every companion gets a card with rarity-colored borders, animated sprites, and stat bars. Five rarity tiers from Common to Legendary.
-
-![Companion Cards](docs/screenshots/companion-cards.png)
-
-## Rarity tiers
-
-| Tier | Color | Weight | Companions |
-|------|-------|--------|------------|
-| Common | Gray | 60% | Duck, Goose, Blob, Penguin, Turtle, Snail, Cactus |
-| Uncommon | Green | 25% | Cat, Owl, Capybara, Mushroom, Frog |
-| Rare | Blue | 10% | Robot, Ghost, Chonk, Heavy Loop |
-| Epic | Purple | 4% | Dragon, Octopus, Axolotl, Fox, Crystal, Jellyfish |
-| Legendary | Gold | 1% | Maltese, Velvet Escape, Sassy Tanuki |
-
-![Rarity Shelf](docs/screenshots/rarity-shelf.png)
-
-## Gacha animation
-
-The hatching sequence plays a 5-phase terminal animation:
+## How It Works
 
 ```
-Phase 0  Charge spinner — "Summoning..." with building intensity
-Phase 1  Particle convergence — dots/stars converge to center
-Phase 2  Rarity flash — screen flashes in rarity color
-Phase 3  Silhouette — dim outline of the companion appears
-Phase 4  Reveal — color fills in, name types out letter by letter
-Phase 5  Card — final card with animated sprite cycling
+┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐
+│  1. BONES   │ ──→ │  2. SOUL    │ ──→ │  3. RUNTIME         │
+│             │     │             │     │                     │
+│ Deterministic     │ LLM writes  │     │ tmux sidecar pane   │
+│ gacha draw  │     │ name +      │     │ observes commands   │
+│ from your   │     │ personality │     │ via Unix socket,    │
+│ username    │     │ + profile   │     │ reacts with speech  │
+│ seed        │     │             │     │ bubbles + sprites   │
+└─────────────┘     └─────────────┘     └─────────────────────┘
 ```
 
-Legendary draws get rainbow particles, screen shake, and longer hold times. Common draws are fast and understated.
+**Bones are deterministic.** Same username → same species, rarity, stats, appearance. Always. The PRNG is seeded from `hash(username + salt)` — no network, no randomness.
 
-## Architecture
+**Soul is AI-generated.** A single LLM call produces the companion's name, tagline, personality, and observer profile (voice, chattiness, sharpness, patience). This controls how often and how sharply the companion speaks.
 
-```
-bones (deterministic)  →  soul (LLM)  →  runtime (tmux sidecar)
-     PRNG seeded by         AI writes        Unix socket server
-     username hash          name/personality  reacts to shell events
-```
+**Runtime is reactive.** Shell hooks fire `buddy event <type>` on every command. The sidecar evaluates whether to call the LLM for a reaction based on the observer profile, command history, and cooldown timers.
 
-**CLI**: `src/index.ts` → `src/cli/setup.ts` (onboarding) → `src/cli/install.ts` (tmux hooks)
+## Companion Cards
 
-**Render**: `src/render/gacha.ts` (animation) → `src/render/card.ts` (card) → `src/render/sprites.ts` (ASCII art)
+Every companion gets a card with rarity-colored borders, animated sprites, and stat bars.
 
-**Runtime**: Shell hook → `buddy event` → Unix socket → `src/runtime/observer.ts` → `src/runtime/sidecar.ts`
+<p align="center">
+  <img src="docs/screenshots/companion-cards.png" alt="Companion Cards" width="520" />
+</p>
+
+## Gacha Animation
+
+The hatching sequence is a 5-phase ANSI animation rendered in-place:
+
+| Phase | What happens | Legendary | Common |
+|-------|-------------|-----------|--------|
+| Charge | Spinner builds tension | 1.8s | 0.8s |
+| Particles | Converge to center | 1.2s | 0.5s |
+| Flash | Screen bursts in rarity color | Rainbow + shake | Subtle tint |
+| Silhouette | Dim outline appears | 0.5s | 0.3s |
+| Reveal | Color fills, name types out | 0.7s | 0.5s |
+
+Higher rarity = longer animation = more anticipation.
+
+## Rarity Tiers
+
+| | Tier | Stars | Drop Rate | Species |
+|-|------|-------|-----------|---------|
+| ⬜ | Common | ★ | 60% | Duck, Goose, Blob, Penguin, Turtle, Snail, Cactus |
+| 🟩 | Uncommon | ★★ | 25% | Cat, Owl, Capybara, Mushroom, Frog |
+| 🟦 | Rare | ★★★ | 10% | Robot, Ghost, Chonk, Heavy Loop |
+| 🟪 | Epic | ★★★★ | 4% | Dragon, Octopus, Axolotl, Fox, Crystal, Jellyfish |
+| 🟨 | Legendary | ★★★★★ | 1% | Maltese, Velvet Escape, Sassy Tanuki |
+
+<p align="center">
+  <img src="docs/screenshots/rarity-shelf.png" alt="Rarity Shelf" width="720" />
+</p>
 
 ## Commands
 
 ```bash
-buddy                # show your companion or start first-run setup
+buddy                # show your companion (or first-run setup)
 buddy setup          # reconfigure LLM provider
 buddy hatch          # re-draw a new companion
 buddy hatch --force  # force replace current companion
@@ -78,23 +103,70 @@ buddy install tmux   # install shell hooks in ~/.zshrc
 buddy pet            # pet your companion
 ```
 
-## Provider support
+## LLM Providers
 
-| Provider | Model | Notes |
-|----------|-------|-------|
-| Alibaba DashScope | qwen3.5-plus | Default, free tier available |
-| OpenAI | gpt-4o-mini | `buddy setup` → choose OpenAI |
-| Anthropic | claude-haiku-4-5 | `buddy setup` → choose Anthropic |
-| Custom | any | OpenAI-compatible endpoint |
+The companion's soul imprint and sidecar reactions are powered by an LLM. Choose during `buddy setup`:
+
+| Provider | Default Model | Notes |
+|----------|---------------|-------|
+| [Alibaba DashScope](https://dashscope.aliyun.com/) | `qwen3.5-plus` | Default. Free tier available. |
+| [OpenAI](https://platform.openai.com/) | `gpt-4o-mini` | Needs API key. |
+| [Anthropic](https://console.anthropic.com/) | `claude-haiku-4-5` | Needs API key. |
+| Custom | any | Any OpenAI-compatible endpoint. |
+
+Provider is tested on setup — if the connection fails, you get a warning but config is still saved.
+
+## Tech Stack
+
+| | Technology | Role |
+|-|------------|------|
+| 🟦 | [TypeScript](https://www.typescriptlang.org/) | Language |
+| 🟩 | [Node.js](https://nodejs.org/) >= 20 | Runtime |
+| 📦 | [pnpm](https://pnpm.io/) | Package manager |
+| 🖥️ | [tmux](https://github.com/tmux/tmux/wiki) | Sidecar host |
+| 🐚 | [zsh](https://www.zsh.org/) | Shell hooks |
+| 🧪 | [node:test](https://nodejs.org/api/test.html) | Test runner (built-in, no framework) |
+| 🎨 | ANSI escape codes | Terminal rendering + animation |
+| 🔌 | Unix domain sockets | Shell event transport |
+| 🤖 | OpenAI-compatible API | Soul imprint + observer reactions |
+
+## Project Structure
+
+```
+src/
+├── atlas/          # Bundled companion templates (deterministic draw pool)
+├── bones/          # PRNG, rarity weights, stat rolling
+├── cli/            # Commander commands (setup, hatch, install, event)
+├── i18n/           # Chinese/English localization
+├── render/
+│   ├── gacha.ts    # 5-phase hatching animation
+│   ├── card.ts     # Companion card renderer
+│   ├── sprites.ts  # ASCII art registry (24 species × 3 frames)
+│   └── compose.ts  # Sprite composition (species + eyes + hat + color)
+├── runtime/
+│   ├── observer.ts # LLM-powered reaction engine
+│   └── sidecar.ts  # tmux pane renderer
+├── soul/           # LLM providers (OpenAI-compatible, Anthropic)
+├── storage/        # Config + companion persistence (~/.terminal-buddy/)
+└── types/          # TypeScript interfaces
+
+showcase/           # Product website (dark theme, glass holographic cards)
+tools/              # Gallery builder, image-to-ASCII converter
+```
 
 ## Development
 
 ```bash
-pnpm install
+pnpm install          # install deps
 pnpm build            # tsc → dist/
-pnpm test             # node --test
+pnpm test             # node --test (59 tests)
 pnpm dev              # tsx src/index.ts
 pnpm run typecheck    # tsc --noEmit
+
+# test with a specific rarity
+rm -rf ~/.terminal-buddy && EVERYBUDDY_USER_ID=t-69 node dist/index.js   # Legendary
+rm -rf ~/.terminal-buddy && EVERYBUDDY_USER_ID=t-23 node dist/index.js   # Epic
+rm -rf ~/.terminal-buddy && EVERYBUDDY_USER_ID=t-0 node dist/index.js    # Common
 ```
 
 ## License
