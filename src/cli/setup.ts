@@ -172,16 +172,16 @@ async function ensureRuntimeConfig(
 
   io.writeLine("");
   io.writeLine("Choose your LLM provider (powers the tmux sidecar observer):");
-  io.writeLine(`  1. OpenAI        (default: ${PROVIDER_DEFAULTS.openai.model})`);
-  io.writeLine(`  2. Anthropic     (default: ${PROVIDER_DEFAULTS.anthropic.model})`);
-  io.writeLine("  3. Custom        (OpenAI-compatible, you provide baseUrl + model)");
+  io.writeLine(`  1. DashScope     (Qwen, default: ${PROVIDER_DEFAULTS.openai.model}, free tier)`);
+  io.writeLine(`  2. Anthropic     (Claude, default: ${PROVIDER_DEFAULTS.anthropic.model})`);
+  io.writeLine("  3. OpenAI        (or any OpenAI-compatible endpoint)");
   io.writeLine("  4. Skip          (set up later with env vars)");
   io.writeLine("");
 
   const choice = (await io.prompt("Enter 1, 2, 3, or 4 [1]: ")).trim() || "1";
 
   if (choice === "4") {
-    io.writeLine(dim("Skipped. Set OPENAI_API_KEY or ANTHROPIC_API_KEY later to enable the observer."));
+    io.writeLine(dim("Skipped. Set DASHSCOPE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY later to enable the observer."));
     return;
   }
 
@@ -198,16 +198,9 @@ async function ensureRuntimeConfig(
     baseUrl = baseUrl || defaults.baseUrl;
   } else if (choice === "3") {
     provider = "custom";
-    baseUrl = (await io.prompt("Base URL (OpenAI-compatible): ")).trim();
-    if (!baseUrl) {
-      io.writeLine(dim("No base URL provided. Skipping provider setup."));
-      return;
-    }
-    model = (await io.prompt("Model name: ")).trim();
-    if (!model) {
-      io.writeLine(dim("No model provided. Skipping provider setup."));
-      return;
-    }
+    const defaultOpenAI = "https://api.openai.com/v1";
+    baseUrl = (await io.prompt(`Base URL [${defaultOpenAI}]: `)).trim() || defaultOpenAI;
+    model = (await io.prompt("Model name [gpt-4o-mini]: ")).trim() || "gpt-4o-mini";
     observerModel = model;
   } else {
     provider = "openai";
@@ -217,7 +210,7 @@ async function ensureRuntimeConfig(
     baseUrl = baseUrl || defaults.baseUrl;
   }
 
-  const keyLabel = provider === "anthropic" ? "Anthropic" : provider === "custom" ? "Custom provider" : "OpenAI";
+  const keyLabel = provider === "anthropic" ? "Anthropic" : provider === "custom" ? "OpenAI" : "DashScope";
   const apiKey = (await io.prompt(`Paste your ${keyLabel} API key: `)).trim();
   if (!apiKey) {
     io.writeLine(dim("No API key provided. Skipping provider setup."));

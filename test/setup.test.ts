@@ -98,7 +98,7 @@ test("runSetupCommand draws a bundled companion locally and prompts for provider
     assert.match(io.output, /╭─/);
     assert.match(io.output, /已保存到/);
     assert.match(io.output, /Choose your LLM provider/);
-    assert.match(io.output, /Skipped\. Set OPENAI_API_KEY/);
+    assert.match(io.output, /Skipped\. Set DASHSCOPE_API_KEY/);
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }
