@@ -1,5 +1,5 @@
 export type StatName = "GRIT" | "FOCUS" | "CHAOS" | "WIT" | "SASS";
-export type BuddyProvider = "openai";
+export type BuddyProvider = "openai" | "anthropic" | "custom";
 export type BuddyLanguage = "zh" | "en";
 export type ObserverVoice = "quiet" | "dry" | "playful" | "deadpan";
 
@@ -89,6 +89,7 @@ export interface CompanionSoul {
 }
 
 export interface CompanionRecord {
+  templateId?: string | undefined;
   userId: string;
   bones: CompanionBones;
   soul: CompanionSoul;

@@ -1,57 +1,104 @@
+import type { BuddyLanguage, CompanionBones, CompanionRecord, StatName } from "../types/companion.js";
+
 import { getDumpStat, getPeakStat, STATS } from "../bones/stats.js";
+import { getLocalizedSoulCopy } from "../i18n/companion.js";
+import {
+  localizeEyeLabel,
+  localizeHatLabel,
+  localizeRarityName,
+  localizeSpeciesName,
+  localizeStatName,
+  uiText,
+} from "../i18n/ui.js";
 import { composeFrame } from "./compose.js";
-import { bold, colorize, dim } from "./color.js";
+import { bold, colorize, dim, italic, rainbow } from "./color.js";
 import { EYES, HATS, SPECIES } from "./sprites.js";
-import type { CompanionBones, CompanionRecord, StatName } from "../types/companion.js";
 
 const MIN_CARD_WIDTH = 44;
 
-export function renderCompanionCard(companion: CompanionRecord): string {
+export interface RenderCardOptions {
+  language?: BuddyLanguage;
+  spriteFrameIndex?: number;
+}
+
+export function renderCompanionCard(
+  companion: CompanionRecord,
+  options: RenderCardOptions = {},
+): string {
+  const language = options.language ?? "zh";
   const bones = companion.bones;
   const soul = companion.soul;
+  const localizedSoul = getLocalizedSoulCopy(companion, language);
   const species = assertExists(SPECIES[bones.species], `Unknown species: ${bones.species}`);
   const eye = assertExists(EYES[bones.eye], `Unknown eye: ${bones.eye}`);
   const hat = assertExists(HATS[bones.hat], `Unknown hat: ${bones.hat}`);
-  const baseFrame = assertExists(
-    species.frames[0],
-    `Species ${bones.species} does not have a base frame.`,
-  );
-  const sprite = normalizeSpriteForCard(composeFrame(baseFrame, eye.char, bones.hat, bones.color), bones.hat);
+  const frameIndex = options.spriteFrameIndex ?? 0;
+  const frame = species.frames[frameIndex % species.frames.length] ?? species.frames[0]!;
+  const sprite = normalizeSpriteForCard(composeFrame(frame, eye.char, bones.hat, bones.color), bones.hat);
   const [peakStat] = getPeakStat(bones.stats);
   const [dumpStat] = getDumpStat(bones.stats);
-  const speciesLine = `${species.name}${bones.shiny ? " · SHINY" : ""}`;
-  const rarityBadge = colorize(`◆ ${bones.rarity.name.toUpperCase()} ${bones.rarity.stars}`, bones.rarity.color);
-  const subtitle = dim([speciesLine, soul.modelUsed].join(" · "));
-  const personalityLines = wrapText(soul.personality, MIN_CARD_WIDTH - 4).map((line) => `  ${line}`);
-  const statLines = STATS.map((statName) =>
-    formatStatLine(statName, bones.stats[statName], peakStat, dumpStat, bones.color),
+  const speciesName = localizeSpeciesName(bones.species, species.name, language);
+  const eyeLabel = localizeEyeLabel(bones.eye, eye.label, language);
+  const hatLabel = localizeHatLabel(bones.hat, hat.label, language);
+  const rarityName = localizeRarityName(bones.rarity.name, language);
+  const speciesLine = `${speciesName}${bones.shiny ? ` · ${uiText(language).shinyLabel}` : ""}`;
+  const rarityLabel = language === "zh" ? rarityName : rarityName.toUpperCase();
+  const rarityText = `◆ ${rarityLabel} ${bones.rarity.stars}`;
+  const rarityBadge = bones.rarity.tier >= 4 ? rainbow(rarityText) : colorize(rarityText, bones.rarity.color);
+
+  // Stars — scale with rarity
+  const starChar = "★";
+  const starCount = Math.max(1, bones.rarity.tier + 1);
+  const starsLine = Array(starCount).fill(starChar).join(" ");
+  const coloredStars = bones.rarity.tier >= 4 ? rainbow(starsLine) : colorize(starsLine, bones.rarity.color);
+
+  // Personality — italic dim, compact
+  const personalityLines = wrapText(localizedSoul.personality, MIN_CARD_WIDTH - 4).map(
+    (line) => `  ${dim(italic(line))}`,
   );
 
+  // Stats — █░ bars
+  const statLines = STATS.map((statName) =>
+    formatStatLine(statName, bones.stats[statName], peakStat, dumpStat, bones, language),
+  );
+
+  // Footer — traits compressed to one dim line
+  const footerParts = [
+    `${eyeLabel} (${eye.char})`,
+    hatLabel,
+    formatTimestamp(companion.createdAt).slice(0, 10),
+  ];
+  const footer = dim(footerParts.join(" · "));
+
   const lines = [
-    colorize("EveryBuddy Companion", bones.color.accent),
-    rarityBadge,
-    bold(soul.name),
-    subtitle,
-    dim(`seed ${companion.userId}`),
+    "",
+    centerText(coloredStars, MIN_CARD_WIDTH),
     "",
     ...centerBlock(sprite),
     "",
-    colorize("Personality", bones.color.accent),
+    centerText(bold(colorize(soul.name, bones.rarity.color)), MIN_CARD_WIDTH),
+    centerText(`${dim(speciesLine)} ${dim("·")} ${rarityBadge}`, MIN_CARD_WIDTH),
+    "",
     ...personalityLines,
     "",
-    colorize("Traits", bones.color.accent),
-    `  Species  ${speciesLine}`,
-    `  Rarity   ${bones.rarity.name} ${bones.rarity.stars}`,
-    `  Eyes     ${eye.label} (${eye.char})`,
-    `  Hat      ${hat.label}`,
-    `  Born     ${formatTimestamp(companion.createdAt)}`,
-    "",
-    colorize("Stats", bones.color.accent),
     ...statLines,
+    "",
+    centerText(footer, MIN_CARD_WIDTH),
+    "",
   ];
 
   const innerWidth = Math.max(MIN_CARD_WIDTH, ...lines.map((line) => visibleLength(line)));
-  return renderPanel(lines, innerWidth);
+  return renderPanel(lines, innerWidth, bones.rarity.color);
+}
+
+/** Number of sprite frames available for a companion's species. */
+export function getSpriteFrameCount(companion: CompanionRecord): number {
+  return SPECIES[companion.bones.species]?.frames.length ?? 1;
+}
+
+/** Total line count of a rendered card (for ANSI redraw calculations). */
+export function getCardLineCount(cardOutput: string): number {
+  return cardOutput.split("\n").length;
 }
 
 function formatStatLine(
@@ -59,26 +106,35 @@ function formatStatLine(
   value: number,
   peakStat: StatName,
   dumpStat: StatName,
-  color: CompanionBones["color"],
+  bones: CompanionBones,
+  language: BuddyLanguage,
 ): string {
-  const bar = makeBar(value);
-  const marker = statName === peakStat ? "peak" : statName === dumpStat ? "dump" : "";
-  const label = statName.padEnd(5, " ");
-  const coloredBar = colorize(bar, statName === dumpStat ? "#6B7280" : color.primary);
-  return `  ${label} ${String(value).padStart(3, " ")} ${coloredBar}${marker ? ` ${dim(marker)}` : ""}`;
-}
-
-function makeBar(value: number): string {
+  const text = uiText(language);
+  const marker =
+    statName === peakStat ? text.peakMarker : statName === dumpStat ? text.dumpMarker : "";
+  const label = padDisplayWidth(localizeStatName(statName, language), 5);
   const filled = Math.max(1, Math.round(value / 10));
   const empty = Math.max(0, 10 - filled);
-  return `${"#".repeat(filled)}${"-".repeat(empty)}`;
+  const filledBar = "█".repeat(filled);
+  const emptyBar = "░".repeat(empty);
+  const isDump = statName === dumpStat;
+  const coloredBar = colorize(filledBar, isDump ? "#6B7280" : bones.color.primary) + dim(emptyBar);
+  const valueStr = isDump ? dim(String(value).padStart(3, " ")) : String(value).padStart(3, " ");
+  return `  ${label} ${coloredBar} ${valueStr}${marker ? ` ${dim(marker)}` : ""}`;
 }
 
-function renderPanel(lines: string[], innerWidth: number): string {
-  const top = `╭${"─".repeat(innerWidth + 2)}╮`;
-  const bottom = `╰${"─".repeat(innerWidth + 2)}╯`;
-  const body = lines.map((line) => `│ ${padDisplayWidth(line, innerWidth)} │`);
+function renderPanel(lines: string[], innerWidth: number, borderColor?: string): string {
+  const c = (text: string) => borderColor ? colorize(text, borderColor) : text;
+  const top = `${c("╭")}${c("─".repeat(innerWidth + 2))}${c("╮")}`;
+  const bottom = `${c("╰")}${c("─".repeat(innerWidth + 2))}${c("╯")}`;
+  const body = lines.map((line) => `${c("│")} ${padDisplayWidth(line, innerWidth)} ${c("│")}`);
   return [top, ...body, bottom].join("\n");
+}
+
+function centerText(text: string, width: number): string {
+  const len = visibleLength(text);
+  const left = Math.max(0, Math.floor((width - len) / 2));
+  return `${" ".repeat(left)}${text}`;
 }
 
 function centerBlock(lines: string[]): string[] {

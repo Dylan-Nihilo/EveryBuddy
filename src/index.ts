@@ -35,11 +35,8 @@ program
 
 program
   .command("hatch")
-  .description("Hatch a companion and persist it to ~/.terminal-buddy/companion.json.")
+  .description("Hatch a companion from the bundled atlas and persist it to ~/.terminal-buddy/companion.json.")
   .option("-u, --user <id>", "Deterministic user id seed")
-  .option("--model <id>", "OpenAI-compatible model id")
-  .option("--base-url <url>", "OpenAI-compatible API base URL")
-  .option("--api-key <key>", "OpenAI-compatible API key")
   .option("--force", "Replace an existing companion")
   .action(async (options) => {
     await runHatchCommand(options);
@@ -54,11 +51,8 @@ program
 
 program
   .command("setup")
-  .description("Run the first-time EveryBuddy setup flow.")
+  .description("Run the first-time EveryBuddy setup flow with a bundled companion draw.")
   .option("-u, --user <id>", "Deterministic user id seed")
-  .option("--model <id>", "OpenAI-compatible model id")
-  .option("--base-url <url>", "OpenAI-compatible API base URL")
-  .option("--api-key <key>", "OpenAI-compatible API key")
   .action(async (options) => {
     await runSetupCommand({ ...options, purpose: "setup" });
   });
@@ -67,9 +61,6 @@ program
   .command("rehatch")
   .description("Draw a new companion and replace the current one.")
   .option("-u, --user <id>", "Deterministic user id seed")
-  .option("--model <id>", "OpenAI-compatible model id")
-  .option("--base-url <url>", "OpenAI-compatible API base URL")
-  .option("--api-key <key>", "OpenAI-compatible API key")
   .action(async (options) => {
     await runSetupCommand({ ...options, purpose: "rehatch" });
   });

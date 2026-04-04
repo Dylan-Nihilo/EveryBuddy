@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EveryBuddy — Terminal Companions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+:root{
+  --bg:#0b0e13;
+  --surface:#12161d;
+  --stroke:rgba(255,255,255,.06);
+  --ink:#e8ecf1;
+  --muted:#6c7689;
+  --display:'Space Grotesk',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+
+html{background:var(--bg)}
+
+body{
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:48px 24px 64px;
+  color:var(--ink);
+  font-family:var(--display);
+}
+
+/* ─── Header ─── */
+
+.header{
+  text-align:center;
+  margin-bottom:56px;
+}
+
+.logo{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:12px;
+}
+
+.title{
+  font-size:clamp(28px,5vw,42px);
+  font-weight:700;
+  letter-spacing:-.04em;
+  line-height:.95;
+  margin-bottom:10px;
+}
+
+.tagline{
+  color:var(--muted);
+  font-size:14px;
+  max-width:380px;
+  margin:0 auto;
+  line-height:1.5;
+}
+
+/* ─── Card Grid ─── */
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:20px;
+  max-width:960px;
+  width:100%;
+}
+
+/* ─── Individual Card ─── */
+
+.card{
+  --rc:#8b8b8b;
+  --sc:#ccc;
+  position:relative;
+  padding:28px 22px 24px;
+  border-radius:18px;
+  background:linear-gradient(
+    165deg,
+    color-mix(in srgb,var(--rc) 7%,var(--surface)) 0%,
+    var(--surface) 50%,
+    color-mix(in srgb,var(--rc) 4%,var(--surface)) 100%
+  );
+  border:1px solid color-mix(in srgb,var(--rc) 20%,var(--stroke));
+  overflow:hidden;
+  transform:rotate(var(--tilt,0deg));
+  transition:transform .3s cubic-bezier(.16,1,.3,1);
+}
+
+.card:hover{
+  transform:rotate(0deg) translateY(-6px);
+}
+
+/* shimmer overlay */
+.card::before{
+  content:'';
+  position:absolute;
+  inset:-1px;
+  border-radius:18px;
+  padding:1px;
+  background:linear-gradient(
+    135deg,
+    color-mix(in srgb,var(--rc) 30%,transparent),
+    transparent 40%,
+    transparent 60%,
+    color-mix(in srgb,var(--rc) 15%,transparent)
+  );
+  mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  mask-composite:exclude;
+  -webkit-mask-composite:xor;
+  pointer-events:none;
+  opacity:.6;
+}
+
+.stars{
+  text-align:center;
+  font-size:12px;
+  letter-spacing:5px;
+  color:var(--rc);
+  margin-bottom:18px;
+}
+
+.stars[data-legendary]{
+  background:linear-gradient(90deg,#f87171,#fbbf24,#4ade80,#60a5fa,#c084fc,#f87171);
+  background-size:200% 100%;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+  animation:rainbow-shift 4s linear infinite;
+}
+
+@keyframes rainbow-shift{to{background-position:-200% 0}}
+
+.sprite{
+  text-align:center;
+  font-family:var(--mono);
+  font-size:14px;
+  line-height:1.3;
+  white-space:pre;
+  color:var(--sc);
+  margin-bottom:18px;
+  min-height:72px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.name{
+  text-align:center;
+  font-size:20px;
+  font-weight:700;
+  color:var(--rc);
+  letter-spacing:-.02em;
+}
+
+.sub{
+  text-align:center;
+  font-size:11px;
+  color:var(--muted);
+  margin-top:4px;
+}
+
+.divider{
+  height:1px;
+  margin:16px 0;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--rc) 25%,transparent),transparent);
+}
+
+.card-tagline{
+  font-size:12px;
+  color:var(--muted);
+  font-style:italic;
+  line-height:1.55;
+  text-align:center;
+  min-height:38px;
+}
+
+.stat-row{
+  display:flex;
+  justify-content:center;
+  gap:20px;
+  margin-top:16px;
+}
+
+.stat{text-align:center}
+.stat-val{
+  font-size:18px;
+  font-weight:700;
+  color:var(--ink);
+  font-variant-numeric:tabular-nums;
+}
+.stat-val.peak{color:var(--rc)}
+.stat-lbl{
+  font-size:9px;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  margin-top:2px;
+}
+
+/* ─── Footer ─── */
+
+.footer{
+  margin-top:56px;
+  text-align:center;
+}
+
+.footer-text{
+  font-family:var(--mono);
+  font-size:11px;
+  color:var(--muted);
+  letter-spacing:.08em;
+}
+
+.footer-text a{
+  color:var(--ink);
+  text-decoration:none;
+  border-bottom:1px solid var(--muted);
+}
+
+/* ─── Responsive ─── */
+
+@media(max-width:720px){
+  .grid{
+    grid-template-columns:1fr;
+    max-width:360px;
+  }
+  .card{transform:rotate(0deg) !important}
+}
+
+@media(min-width:721px) and (max-width:960px){
+  .grid{
+    grid-template-columns:repeat(2,1fr);
+    max-width:640px;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <p class="logo">EveryBuddy</p>
+  <h1 class="title">Terminal Companions</h1>
+  <p class="tagline">Gacha-hatched, AI-souled pets that live in your tmux and react to your shell.</p>
+</div>
+
+<div class="grid">
+
+  <!-- Legendary: Maltese -->
+  <div class="card" style="--rc:#FBBF24;--sc:#F8FAFC;--tilt:-2.5deg">
+    <div class="stars" data-legendary>★ ★ ★ ★ ★</div>
+    <div class="sprite">  ˙ ᵕ ˙
+ /)   (\
+( * · * )
+ ( ᵕωᵕ )
+  u   u</div>
+    <div class="name">Maltese</div>
+    <div class="sub">Maltese · Legendary *****</div>
+    <div class="divider"></div>
+    <div class="card-tagline">A white hush that wiggles beside a clean prompt.</div>
+    <div class="stat-row">
+      <div class="stat"><div class="stat-val peak">94</div><div class="stat-lbl">Focus</div></div>
+      <div class="stat"><div class="stat-val">83</div><div class="stat-lbl">Wit</div></div>
+      <div class="stat"><div class="stat-val">18</div><div class="stat-lbl">Chaos</div></div>
+    </div>
+  </div>
+
+  <!-- Legendary: Sassy Tanuki -->
+  <div class="card" style="--rc:#FBBF24;--sc:#C4A882;--tilt:1.8deg">
+    <div class="stars" data-legendary>★ ★ ★ ★ ★</div>
+    <div class="sprite">   /\__/\\
+  ( o  o )
+ (   ww   )
+  \_/__\_/</div>
+    <div class="name">Sassy Tanuki</div>
+    <div class="sub">Tanuki · Legendary *****</div>
+    <div class="divider"></div>
+    <div class="card-tagline">It judges your shell, then guards it anyway.</div>
+    <div class="stat-row">
+      <div class="stat"><div class="stat-val peak">95</div><div class="stat-lbl">Sass</div></div>
+      <div class="stat"><div class="stat-val">85</div><div class="stat-lbl">Wit</div></div>
+      <div class="stat"><div class="stat-val">21</div><div class="stat-lbl">Focus</div></div>
+    </div>
+  </div>
+
+  <!-- Epic: Stackwyrm -->
+  <div class="card" style="--rc:#C084FC;--sc:#FB7185;--tilt:-1.2deg">
+    <div class="stars">★ ★ ★ ★</div>
+    <div class="sprite">  /^\  /^\
+ <  *  *  >
+ (   ~~   )
+  `-vvvv-´</div>
+    <div class="name">Stackwyrm</div>
+    <div class="sub">Dragon · Epic ****</div>
+    <div class="divider"></div>
+    <div class="card-tagline">It coils around hot code and colder judgment.</div>
+    <div class="stat-row">
+      <div class="stat"><div class="stat-val peak">93</div><div class="stat-lbl">Sass</div></div>
+      <div class="stat"><div class="stat-val">71</div><div class="stat-lbl">Grit</div></div>
+      <div class="stat"><div class="stat-val">17</div><div class="stat-lbl">Chaos</div></div>
+    </div>
+  </div>
+
+  <!-- Rare: Patchbot -->
+  <div class="card" style="--rc:#60A5FA;--sc:#67E8F9;--tilt:2.2deg">
+    <div class="stars">★ ★ ★</div>
+    <div class="sprite">    --o--
+   .[||].
+  [ +  + ]
+  [ ==== ]
+  `------´</div>
+    <div class="name">Patchbot</div>
+    <div class="sub">Robot · Rare ***</div>
+    <div class="divider"></div>
+    <div class="card-tagline">A blue pulse under the shell's steel skin.</div>
+    <div class="stat-row">
+      <div class="stat"><div class="stat-val peak">84</div><div class="stat-lbl">Wit</div></div>
+      <div class="stat"><div class="stat-val">73</div><div class="stat-lbl">Focus</div></div>
+      <div class="stat"><div class="stat-val">18</div><div class="stat-lbl">Grit</div></div>
+    </div>
+  </div>
+
+  <!-- Uncommon: Lint Prowler -->
+  <div class="card" style="--rc:#4ADE80;--sc:#FCD34D;--tilt:-1.8deg">
+    <div class="stars">★ ★</div>
+    <div class="sprite">   /\_/\
+  ( *   *)
+  (  ω  )
+  (")_(")</div>
+    <div class="name">Lint Prowler</div>
+    <div class="sub">Cat · Uncommon **</div>
+    <div class="divider"></div>
+    <div class="card-tagline">It lands on clean builds with suspicious grace.</div>
+    <div class="stat-row">
+      <div class="stat"><div class="stat-val peak">83</div><div class="stat-lbl">Wit</div></div>
+      <div class="stat"><div class="stat-val">68</div><div class="stat-lbl">Focus</div></div>
+      <div class="stat"><div class="stat-val">16</div><div class="stat-lbl">Chaos</div></div>
+    </div>
+  </div>
+
+  <!-- Common: Honk -->
+  <div class="card" style="--rc:#B0B0B0;--sc:#FDE68A;--tilt:1.4deg">
+    <div class="stars">★</div>
+    <div class="sprite">     (*>
+     ||
+   _(__)_
+    ^^^^</div>
+    <div class="name">Honk</div>
+    <div class="sub">Goose · Common *</div>
+    <div class="divider"></div>
+    <div class="card-tagline">A grin tucked between failed aliases.</div>
+    <div class="stat-row">
+      <div class="stat"><div class="stat-val peak">95</div><div class="stat-lbl">Sass</div></div>
+      <div class="stat"><div class="stat-val">61</div><div class="stat-lbl">Wit</div></div>
+      <div class="stat"><div class="stat-val">8</div><div class="stat-lbl">Chaos</div></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <p class="footer-text">npm install -g everybuddy · <a href="https://github.com/Dylan-Nihilo/EveryBuddy">github.com/Dylan-Nihilo/EveryBuddy</a></p>
+</div>
+
+<script>
+const spriteFrames = {
+  maltese: [
+    "  \u02d9 \u1d55 \u02d9\n /)   (\\\n( * \u00b7 * )\n ( \u1d55\u03c9\u1d55 )\n  u   u",
+    "  \u02d9 \u1d55 \u02d9\n /)   (\\\n( -   - )\n ( \u1d55\u03c9\u1d55 )\n  u   u",
+    "  \u02d9 \u1d55 \u02d9\n /)   (\\\n( * \u00b7 * )\n ( \u1d55u\u1d55 )\n  u   u",
+  ],
+  tanuki: [
+    "   /\\__/\\\\\n  ( o  o )\n (   ww   )\n  \\_/__\\_/",
+    "   /\\__/\\\\\n  ( -  - )\n (   ww   )\n  \\_/__\\_/",
+    "   /\\__/\\\\\n  ( o  o )\n (   uu   )\n  \\_/__\\_/",
+  ],
+  dragon: [
+    "  /^\\  /^\\\n <  *  *  >\n (   ~~   )\n  `-vvvv-\u00b4",
+    "  /^\\  /^\\\n <  *  *  >\n (        )\n  `-vvvv-\u00b4",
+    "   ~    ~\n  /^\\  /^\\\n <  *  *  >\n (   ~~   )\n  `-vvvv-\u00b4",
+  ],
+  robot: [
+    "    --o--\n   .[||].\n  [ +  + ]\n  [ ==== ]\n  `------\u00b4",
+    "    --o--\n   .[||].\n  [ -  - ]\n  [ ==== ]\n  `------\u00b4",
+    "    --*--\n   .[||].\n  [ +  + ]\n  [ ==== ]\n  `------\u00b4",
+  ],
+  cat: [
+    "   /\\_/\\\n  ( *   *)\n  (  \u03c9  )\n  (\")_(\")",
+    "   /\\_/\\\n  ( *   *)\n  (  \u03c9  )\n  (\")_(\")\u007e",
+    "   /\\-/\\\n  ( *   *)\n  (  \u03c9  )\n  (\")_(\")",
+  ],
+  goose: [
+    "     (*>\n     ||\n   _(__)_\n    ^^^^",
+    "    (*>\n     ||\n   _(__)_\n    ^^^^",
+    "     (*>>\n     ||\n   _(__)_\n    ^^^^",
+  ],
+};
+const speciesMap = ['maltese','tanuki','dragon','robot','cat','goose'];
+const sprites = document.querySelectorAll('.sprite');
+let tick = 0;
+setInterval(() => {
+  tick++;
+  sprites.forEach((el, i) => {
+    const key = speciesMap[i];
+    const frames = spriteFrames[key];
+    if (frames) el.textContent = frames[tick % frames.length];
+  });
+}, 500);
+</script>
+</body>
+</html>

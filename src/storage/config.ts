@@ -6,6 +6,7 @@ import { configFilePath, defaultStorageDir } from "./paths.js";
 import type {
   BuddyConfig,
   BuddyLanguage,
+  BuddyProvider,
   HatchReadyConfig,
   ResolvedBuddyConfig,
 } from "../types/companion.js";
@@ -13,6 +14,34 @@ import type {
 export const DEFAULT_OPENAI_BASE_URL = "https://coding.dashscope.aliyuncs.com/v1";
 export const DEFAULT_OPENAI_MODEL = "qwen3.5-plus";
 export const DEFAULT_OPENAI_OBSERVER_MODEL = "qwen3-coder-next";
+export const DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
+export const DEFAULT_ANTHROPIC_OBSERVER_MODEL = "claude-haiku-4-5-20251001";
+
+export const PROVIDER_DEFAULTS = {
+  openai: {
+    baseUrl: DEFAULT_OPENAI_BASE_URL,
+    model: DEFAULT_OPENAI_MODEL,
+    observerModel: DEFAULT_OPENAI_OBSERVER_MODEL,
+  },
+  anthropic: {
+    baseUrl: DEFAULT_ANTHROPIC_BASE_URL,
+    model: DEFAULT_ANTHROPIC_MODEL,
+    observerModel: DEFAULT_ANTHROPIC_OBSERVER_MODEL,
+  },
+  custom: {
+    baseUrl: undefined as string | undefined,
+    model: undefined as string | undefined,
+    observerModel: undefined as string | undefined,
+  },
+} as const satisfies Record<
+  BuddyProvider,
+  {
+    baseUrl: string | undefined;
+    model: string | undefined;
+    observerModel: string | undefined;
+  }
+>;
 
 export interface ResolveBuddyConfigOptions {
   model?: string | undefined;
@@ -21,9 +50,8 @@ export interface ResolveBuddyConfigOptions {
   storageDir?: string | undefined;
 }
 
-const DEFAULT_CONFIG: Pick<ResolvedBuddyConfig, "provider" | "model" | "language"> = {
+const DEFAULT_CONFIG: Pick<ResolvedBuddyConfig, "provider" | "language"> = {
   provider: "openai",
-  model: DEFAULT_OPENAI_MODEL,
   language: "zh",
 };
 
@@ -47,14 +75,16 @@ export async function resolveBuddyConfig(
     storageDir,
   };
 
-  const baseUrl = normalizeOptionalString(merged.baseUrl) ?? DEFAULT_OPENAI_BASE_URL;
+  const provider = isValidProvider(merged.provider) ? merged.provider : DEFAULT_CONFIG.provider;
+  const defaults = PROVIDER_DEFAULTS[provider];
+  const baseUrl = normalizeOptionalString(merged.baseUrl) ?? defaults.baseUrl ?? "";
+  const model = normalizeOptionalString(merged.model) ?? defaults.model ?? "";
   const observerModel =
-    normalizeOptionalString(merged.observerModel) ??
-    (baseUrl === DEFAULT_OPENAI_BASE_URL ? DEFAULT_OPENAI_OBSERVER_MODEL : undefined);
+    normalizeOptionalString(merged.observerModel) ?? defaults.observerModel;
 
   return {
-    provider: "openai",
-    model: typeof merged.model === "string" ? merged.model.trim() : "",
+    provider,
+    model,
     observerModel,
     apiKey: normalizeOptionalString(merged.apiKey),
     baseUrl,
@@ -67,11 +97,11 @@ export function assertHatchReadyConfig(config: ResolvedBuddyConfig): HatchReadyC
   const missing: string[] = [];
 
   if (!config.apiKey) {
-    missing.push("OPENAI_API_KEY or --api-key");
+    missing.push("API key (--api-key or env variable)");
   }
 
   if (!config.model) {
-    missing.push("OPENAI_MODEL or --model");
+    missing.push("model (--model)");
   }
 
   if (missing.length > 0) {
@@ -81,7 +111,7 @@ export function assertHatchReadyConfig(config: ResolvedBuddyConfig): HatchReadyC
   const apiKey = config.apiKey;
   const model = config.model;
   if (!apiKey) {
-    throw new Error("Missing hatch configuration: OPENAI_API_KEY or --api-key.");
+    throw new Error("Missing hatch configuration: API key (--api-key or env variable).");
   }
 
   return {
@@ -148,10 +178,30 @@ export async function updateBuddyConfigFile(
 }
 
 function readEnvConfig(): BuddyConfig {
+  const explicitProvider = normalizeProvider(process.env.BUDDY_PROVIDER);
+  const openaiKey = process.env.OPENAI_API_KEY ?? process.env.DASHSCOPE_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+  let provider = explicitProvider;
+  let apiKey: string | undefined;
+
+  if (provider === "anthropic") {
+    apiKey = anthropicKey;
+  } else if (provider === "openai" || provider === "custom") {
+    apiKey = openaiKey;
+  } else if (anthropicKey && !openaiKey) {
+    provider = "anthropic";
+    apiKey = anthropicKey;
+  } else if (openaiKey) {
+    provider = "openai";
+    apiKey = openaiKey;
+  }
+
   return compactConfig({
-    apiKey: process.env.OPENAI_API_KEY ?? process.env.DASHSCOPE_API_KEY,
+    provider,
+    apiKey,
     baseUrl: process.env.OPENAI_BASE_URL,
-    model: process.env.OPENAI_MODEL,
+    model: process.env.OPENAI_MODEL ?? process.env.BUDDY_MODEL,
     observerModel: process.env.OPENAI_OBSERVER_MODEL,
   });
 }
@@ -168,8 +218,8 @@ function parseBuddyConfig(value: unknown): BuddyConfig {
   const baseUrl = value.baseUrl;
   const language = value.language;
 
-  if (provider !== undefined && provider !== "openai") {
-    throw new Error("Only provider `openai` is supported in Phase 2.");
+  if (provider !== undefined && !isValidProvider(provider)) {
+    throw new Error("Config `provider` must be one of: openai, anthropic, custom.");
   }
 
   if (model !== undefined && typeof model !== "string") {
@@ -225,8 +275,16 @@ function isLanguage(value: unknown): value is BuddyLanguage {
   return value === "zh" || value === "en";
 }
 
+function normalizeProvider(value: unknown): BuddyProvider | undefined {
+  return isValidProvider(value) ? value : undefined;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isValidProvider(value: unknown): value is BuddyProvider {
+  return value === "openai" || value === "anthropic" || value === "custom";
 }
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {

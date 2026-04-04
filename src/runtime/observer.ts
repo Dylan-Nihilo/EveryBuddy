@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { OpenAICompatibleProvider } from "../soul/providers/openai.js";
+import { createProvider } from "../soul/providers/index.js";
 import type { AIProvider } from "../soul/providers/types.js";
 import { DEFAULT_OBSERVER_PROFILE } from "../soul/profile.js";
 import { resolveBuddyConfig } from "../storage/config.js";
@@ -238,7 +238,8 @@ export async function createCompanionObserver(
     language = config.language;
 
     if (config.apiKey) {
-      provider = new OpenAICompatibleProvider({
+      provider = createProvider({
+        provider: config.provider,
         apiKey: config.apiKey,
         model: config.observerModel ?? config.model,
         baseUrl: config.baseUrl,
@@ -510,7 +511,19 @@ function minimumWindowSize(profile: ObserverProfile): number {
 }
 
 function cooldownMsForProfile(profile: ObserverProfile): number {
-  return Math.max(2_500, DEFAULT_LLM_COOLDOWN_MS + (3 - profile.chattiness) * 2_000);
+  switch (profile.chattiness) {
+    case 5:
+      return 2_000;
+    case 4:
+      return 3_000;
+    case 3:
+      return 4_500;
+    case 2:
+      return 6_000;
+    case 1:
+    default:
+      return 8_000;
+  }
 }
 
 function normalizeCommand(command?: string): string {

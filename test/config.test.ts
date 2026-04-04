@@ -8,6 +8,7 @@ import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
   DEFAULT_OPENAI_OBSERVER_MODEL,
+  PROVIDER_DEFAULTS,
   readBuddyConfigFile,
   resolveBuddyConfig,
   updateBuddyConfigFile,
@@ -131,6 +132,45 @@ test("resolveBuddyConfig accepts DASHSCOPE_API_KEY as an API key source", async 
     process.env.OPENAI_MODEL = previousEnv.OPENAI_MODEL;
     process.env.OPENAI_OBSERVER_MODEL = previousEnv.OPENAI_OBSERVER_MODEL;
     process.env.DASHSCOPE_API_KEY = previousEnv.DASHSCOPE_API_KEY;
+    await rm(storageDir, { recursive: true, force: true });
+  }
+});
+
+test("resolveBuddyConfig detects the anthropic provider from ANTHROPIC_API_KEY", async () => {
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-config-anthropic-"));
+  const previousEnv = {
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
+    OPENAI_OBSERVER_MODEL: process.env.OPENAI_OBSERVER_MODEL,
+    DASHSCOPE_API_KEY: process.env.DASHSCOPE_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    BUDDY_PROVIDER: process.env.BUDDY_PROVIDER,
+  };
+
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_BASE_URL;
+  delete process.env.OPENAI_MODEL;
+  delete process.env.OPENAI_OBSERVER_MODEL;
+  delete process.env.DASHSCOPE_API_KEY;
+  delete process.env.BUDDY_PROVIDER;
+  process.env.ANTHROPIC_API_KEY = "anthropic-key";
+
+  try {
+    const resolved = await resolveBuddyConfig({ storageDir });
+    assert.equal(resolved.provider, "anthropic");
+    assert.equal(resolved.apiKey, "anthropic-key");
+    assert.equal(resolved.model, PROVIDER_DEFAULTS.anthropic.model);
+    assert.equal(resolved.observerModel, PROVIDER_DEFAULTS.anthropic.observerModel);
+    assert.equal(resolved.baseUrl, PROVIDER_DEFAULTS.anthropic.baseUrl);
+  } finally {
+    process.env.OPENAI_API_KEY = previousEnv.OPENAI_API_KEY;
+    process.env.OPENAI_BASE_URL = previousEnv.OPENAI_BASE_URL;
+    process.env.OPENAI_MODEL = previousEnv.OPENAI_MODEL;
+    process.env.OPENAI_OBSERVER_MODEL = previousEnv.OPENAI_OBSERVER_MODEL;
+    process.env.DASHSCOPE_API_KEY = previousEnv.DASHSCOPE_API_KEY;
+    process.env.ANTHROPIC_API_KEY = previousEnv.ANTHROPIC_API_KEY;
+    process.env.BUDDY_PROVIDER = previousEnv.BUDDY_PROVIDER;
     await rm(storageDir, { recursive: true, force: true });
   }
 });

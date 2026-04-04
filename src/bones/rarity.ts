@@ -5,7 +5,7 @@ export const RARITIES: Rarity[] = [
     tier: 0,
     name: "Common",
     stars: "*",
-    color: "#8B8B8B",
+    color: "#B0B0B0",
     weight: 60,
     floor: 5,
   },

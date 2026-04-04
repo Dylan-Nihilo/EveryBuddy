@@ -37,7 +37,7 @@ test("runInstallTmuxCommand writes ~/.zshrc once and stays idempotent on repeat 
     });
 
     assert.equal(first.status, "installed");
-    assert.match(firstIo.output, /Installed EveryBuddy into/);
+    assert.match(firstIo.output, /已把 EveryBuddy 安装到/);
 
     const firstContent = await readFile(zshrcPath, "utf8");
     assert.equal(countOccurrences(firstContent, EVERYBUDDY_HOOK_START), 1);
@@ -52,7 +52,7 @@ test("runInstallTmuxCommand writes ~/.zshrc once and stays idempotent on repeat 
     });
 
     assert.equal(second.status, "already_installed");
-    assert.match(secondIo.output, /already installed/);
+    assert.match(secondIo.output, /已经写入/);
 
     const secondContent = await readFile(zshrcPath, "utf8");
     assert.equal(countOccurrences(secondContent, EVERYBUDDY_HOOK_START), 1);

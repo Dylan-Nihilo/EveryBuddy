@@ -2,9 +2,18 @@ import net from "node:net";
 import path from "node:path";
 
 import { getDumpStat, getPeakStat } from "../bones/stats.js";
+import { getLocalizedSoulCopy } from "../i18n/companion.js";
+import {
+  localizeRarityName,
+  localizeSpeciesName,
+  localizeStatName,
+  localizeVoiceLabel,
+  uiText,
+} from "../i18n/ui.js";
 import { readCompanionRecord } from "../storage/companion.js";
+import { resolveBuddyConfig } from "../storage/config.js";
 import { composeFrame } from "../render/compose.js";
-import { bold, colorize, dim } from "../render/color.js";
+import { bold, colorize, dim, italic } from "../render/color.js";
 import { EYES, SPECIES, renderCompactFace } from "../render/sprites.js";
 import {
   buildCommandTracker,
@@ -17,7 +26,7 @@ import {
 import { ensureSocketDirectory, removeSocketIfExists, socketPathForWindow } from "./socket.js";
 import { SIDECAR_OPTION, TARGET_OPTION, TmuxClient } from "./tmux.js";
 import type { RenderMode, ShellEvent, SidecarState } from "./types.js";
-import type { CompanionRecord, ObserverVoice, StatName } from "../types/companion.js";
+import type { BuddyLanguage, CompanionRecord } from "../types/companion.js";
 
 const FRAME_TICK_MS = 500;
 const HEALTH_TICK_MS = 1000;
@@ -47,6 +56,7 @@ export interface SidecarCommandOptions {
 
 export async function runSidecarCommand(options: SidecarCommandOptions): Promise<void> {
   const tmux = new TmuxClient();
+  const config = await resolveBuddyConfig();
   const sidecarPaneId = process.env.TMUX_PANE?.trim();
   if (!sidecarPaneId) {
     throw new Error("EveryBuddy sidecar requires a tmux pane.");
@@ -60,6 +70,7 @@ export async function runSidecarCommand(options: SidecarCommandOptions): Promise
     windowId: options.windowId,
     sidecarPaneId,
     targetPaneId: options.targetPane,
+    language: config.language,
     companion: await readCompanionRecord(),
     frameTick: 0,
     renderMode: resolveRenderMode(currentPaneWidth()),
@@ -385,7 +396,7 @@ function renderCompanionSidecar(state: SidecarState): string[] {
 
   const paneWidth = currentPaneWidth();
   const paneHeight = currentPaneHeight();
-  const statusHint = statusHintText(state.status, state.lastExitCode);
+  const statusHint = statusHintText(state.status, state.lastExitCode, state.language);
   const dockLines = renderCompanionDock(
     state,
     sprite,
@@ -442,7 +453,9 @@ function renderNarrowCompanion(
     const styled = reaction.fading ? dim(line) : styleNarrowLabel(line, state, color);
     return centerLine(styled, paneWidth);
   });
-  const statusHint = !reaction.text ? statusHintText(state.status, state.lastExitCode) : undefined;
+  const statusHint = !reaction.text
+    ? statusHintText(state.status, state.lastExitCode, state.language)
+    : undefined;
 
   return trimTrailingEmptyLines([
     centerLine(face, paneWidth),
@@ -455,9 +468,10 @@ function renderEmptySidecar(state: SidecarState): string[] {
   const paneWidth = currentPaneWidth();
   const paneHeight = currentPaneHeight();
   const reaction = resolveReactionBubble(state, Date.now());
+  const text = uiText(state.language);
   const lines = [
-    centerLine(dim("No companion hatched yet."), paneWidth),
-    centerLine("Run `buddy`", paneWidth),
+    centerLine(dim(text.noCompanionSidecar), paneWidth),
+    centerLine(text.runBuddyHint, paneWidth),
   ];
 
   if (reaction.text) {
@@ -493,20 +507,31 @@ function renderCompanionDock(
     return [];
   }
 
+  const text = uiText(state.language);
   const [peakStat, peakValue] = getPeakStat(companion.bones.stats);
   const [dumpStat, dumpValue] = getDumpStat(companion.bones.stats);
+  const localizedRarity = localizeRarityName(companion.bones.rarity.name, state.language);
   const rarityLine = colorize(
-    `◆ ${companion.bones.rarity.name.toUpperCase()} ${companion.bones.rarity.stars}`,
+    `◆ ${state.language === "zh" ? localizedRarity : localizedRarity.toUpperCase()} ${companion.bones.rarity.stars}`,
     companion.bones.rarity.color,
   );
   const projectName = state.cwd ? path.basename(state.cwd) || state.cwd : undefined;
   const infoLine = dim(
-    [companion.bones.species, projectName ? `in ${projectName}` : undefined].filter(Boolean).join(" · "),
+    [
+      localizeSpeciesName(
+        companion.bones.species,
+        SPECIES[companion.bones.species]?.name ?? companion.bones.species,
+        state.language,
+      ),
+      projectName ? text.inProject(projectName) : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · "),
   );
   const statLine = dim(
-    `${peakStat.toLowerCase()} ${String(peakValue).padStart(2, "0")} · ${dumpStat.toLowerCase()} ${String(dumpValue).padStart(2, "0")}`,
+    `${localizeStatName(peakStat, state.language)} ${String(peakValue).padStart(2, "0")} · ${localizeStatName(dumpStat, state.language)} ${String(dumpValue).padStart(2, "0")}`,
   );
-  const summary = buildIdleSoulSummary(companion);
+  const summary = buildIdleSoulSummary(companion, state.language);
   const personalityLines =
     state.reactionText === undefined
       ? wrapText(summary, summaryWidth, IDLE_SUMMARY_MAX_LINES).map((line) =>
@@ -523,7 +548,7 @@ function renderCompanionDock(
     ...centerBlock(sprite, paneWidth),
     "",
     centerLine(styleCompanionName(companion.soul.name, state, primaryColor), paneWidth),
-    centerLine(dim(colorize(companion.bones.rarity.name, accentColor)), paneWidth),
+    centerLine(dim(colorize(localizedRarity, accentColor)), paneWidth),
   ]);
 }
 
@@ -577,15 +602,17 @@ function styleBubbleText(text: string, fading: boolean): string {
 }
 
 function styleCompanionName(name: string, state: SidecarState, color: string): string {
+  const styledName = italic(name);
+
   if (state.directAddressActive || isPulseActive(state)) {
-    return bold(colorize(` ${name} `, color));
+    return bold(italic(colorize(` ${name} `, color)));
   }
 
   if (state.reactionText) {
-    return colorize(name, color);
+    return italic(colorize(name, color));
   }
 
-  return dim(name);
+  return dim(styledName);
 }
 
 function styleCompactFace(text: string, color: string, pulsing: boolean): string {
@@ -601,13 +628,18 @@ function styleNarrowLabel(text: string, state: SidecarState, color: string): str
   return dim(text);
 }
 
-function statusHintText(status: SidecarState["status"], exitCode?: number): string | undefined {
+function statusHintText(
+  status: SidecarState["status"],
+  exitCode: number | undefined,
+  language: BuddyLanguage,
+): string | undefined {
+  const text = uiText(language);
   if (status === "thinking") {
-    return "thinking";
+    return text.thinking;
   }
 
   if (status === "finished" && exitCode !== undefined && exitCode !== 0) {
-    return "command failed";
+    return text.commandFailed;
   }
 
   return undefined;
@@ -835,8 +867,11 @@ function splitWrapTokens(text: string): string[] {
   return Array.from(trimmed);
 }
 
-export function buildIdleSoulSummary(companion: CompanionRecord): string {
-  const tagline = companion.soul.tagline?.trim();
+export function buildIdleSoulSummary(
+  companion: CompanionRecord,
+  language: BuddyLanguage = inferCompanionLanguage(companion),
+): string {
+  const tagline = getLocalizedSoulCopy(companion, language).tagline?.trim();
   if (tagline) {
     return tagline;
   }
@@ -845,71 +880,15 @@ export function buildIdleSoulSummary(companion: CompanionRecord): string {
   const [peakStat] = getPeakStat(companion.bones.stats);
   const [dumpStat] = getDumpStat(companion.bones.stats);
 
-  if (looksChinese(companion.soul.personality)) {
-    return `${voiceLabelZh(profile.voice)} · ${statLabelZh(peakStat)}强，${statLabelZh(dumpStat)}低`;
+  if (language === "zh") {
+    return `${localizeVoiceLabel(profile.voice, language)} · ${localizeStatName(peakStat, language)}强，${localizeStatName(dumpStat, language)}低`;
   }
 
-  return `${voiceLabelEn(profile.voice)} · high ${statLabelEn(peakStat)} · low ${statLabelEn(dumpStat)}`;
+  return `${localizeVoiceLabel(profile.voice, language)} · high ${localizeStatName(peakStat, language).toLowerCase()} · low ${localizeStatName(dumpStat, language).toLowerCase()}`;
 }
 
-function looksChinese(value: string): boolean {
-  return /[\u3400-\u9fff]/u.test(value);
-}
-
-function voiceLabelZh(voice: ObserverVoice): string {
-  switch (voice) {
-    case "quiet":
-      return "安静型";
-    case "dry":
-      return "冷面型";
-    case "playful":
-      return "俏皮型";
-    case "deadpan":
-      return "面瘫型";
-  }
-}
-
-function voiceLabelEn(voice: ObserverVoice): string {
-  switch (voice) {
-    case "quiet":
-      return "quiet";
-    case "dry":
-      return "dry";
-    case "playful":
-      return "playful";
-    case "deadpan":
-      return "deadpan";
-  }
-}
-
-function statLabelZh(stat: StatName): string {
-  switch (stat) {
-    case "GRIT":
-      return "抗压";
-    case "FOCUS":
-      return "专注";
-    case "CHAOS":
-      return "混沌";
-    case "WIT":
-      return "机灵";
-    case "SASS":
-      return "毒舌";
-  }
-}
-
-function statLabelEn(stat: StatName): string {
-  switch (stat) {
-    case "GRIT":
-      return "grit";
-    case "FOCUS":
-      return "focus";
-    case "CHAOS":
-      return "chaos";
-    case "WIT":
-      return "wit";
-    case "SASS":
-      return "sass";
-  }
+function inferCompanionLanguage(companion: CompanionRecord): BuddyLanguage {
+  return /[\u3400-\u9fff]/u.test(companion.soul.personality) ? "zh" : "en";
 }
 
 function splitTokenByDisplayWidth(token: string, width: number): [string, string] {

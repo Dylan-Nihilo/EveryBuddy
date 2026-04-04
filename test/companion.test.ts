@@ -12,6 +12,7 @@ test("writeCompanionRecord persists and readCompanionRecord restores the full re
   const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-companion-"));
   const bones = rollCompanion("storage-spec-user");
   const record: CompanionRecord = {
+    templateId: "storage-template",
     userId: "storage-spec-user",
     bones,
     soul: {

@@ -1,22 +1,35 @@
 import path from "node:path";
 
-import { rollCompanion } from "../bones/roll.js";
+import {
+  buildBundledCompanionRecord,
+  selectBundledCompanionTemplate,
+  selectReplacementBundledCompanionTemplate,
+} from "../atlas/bundled.js";
 import { getDumpStat, getPeakStat } from "../bones/stats.js";
+import { getLocalizedSoulCopy } from "../i18n/companion.js";
+import {
+  localizeEyeLabel,
+  localizeHatLabel,
+  localizeRarityName,
+  localizeSpeciesName,
+  localizeStatName,
+  uiText,
+} from "../i18n/ui.js";
 import { renderCompanionCard } from "../render/card.js";
+import { playGachaAnimation } from "../render/gacha.js";
+import { createProvider } from "../soul/providers/index.js";
 import { colorize, dim } from "../render/color.js";
 import { composeFrame } from "../render/compose.js";
-import { EYES, SPECIES } from "../render/sprites.js";
-import { buildCompanionRecord, hatchSoul } from "../soul/hatch.js";
-import { OpenAICompatibleProvider } from "../soul/providers/openai.js";
-import type { AIProvider } from "../soul/providers/types.js";
+import { EYES, HATS, SPECIES } from "../render/sprites.js";
 import { readCompanionRecord, writeCompanionRecord } from "../storage/companion.js";
 import { companionFilePath } from "../storage/paths.js";
 import {
+  PROVIDER_DEFAULTS,
   resolveBuddyConfig,
   resolveUserId,
   updateBuddyConfigFile,
 } from "../storage/config.js";
-import type { CompanionBones, CompanionRecord, CompanionSoul } from "../types/companion.js";
+import type { BuddyLanguage, BuddyProvider, CompanionRecord, CompanionSoul } from "../types/companion.js";
 import type { HatchSceneState } from "../types/onboarding.js";
 import { createConsoleIO, type PromptIO } from "./io.js";
 import {
@@ -30,12 +43,8 @@ const SPINNER_FRAMES = ["·  ", "·· ", "···", " ··"];
 
 export interface SetupCommandOptions {
   user?: string | undefined;
-  model?: string | undefined;
-  baseUrl?: string | undefined;
-  apiKey?: string | undefined;
   storageDir?: string | undefined;
   io?: PromptIO | undefined;
-  providerFactory?: ((params: { apiKey: string; model: string; baseUrl: string }) => AIProvider) | undefined;
   installFlow?: ((params: { io: PromptIO }) => Promise<unknown>) | undefined;
   sleep?: ((ms: number) => Promise<void>) | undefined;
   purpose?: "first_run" | "setup" | "rehatch" | undefined;
@@ -49,6 +58,7 @@ export interface BuddyHomeCommandOptions {
 }
 
 export async function runBuddyHomeCommand(options: BuddyHomeCommandOptions = {}): Promise<void> {
+  const language = (await resolveBuddyConfig({ storageDir: options.storageDir })).language;
   const companion = await readCompanionRecord(options.storageDir);
   if (!companion) {
     await (options.startSetup ?? runSetupCommand)({
@@ -62,12 +72,15 @@ export async function runBuddyHomeCommand(options: BuddyHomeCommandOptions = {})
   const io = options.io ?? createConsoleIO();
   const output = await getBuddyHomeOutput({
     companion,
+    language,
     detectInstallStatus: options.detectInstallStatus,
   });
   io.writeLine(output);
 }
 
 export async function runSetupCommand(options: SetupCommandOptions = {}): Promise<void> {
+  const language = (await resolveBuddyConfig({ storageDir: options.storageDir })).language;
+  const text = uiText(language);
   const io = options.io ?? createConsoleIO();
   const sleep = options.sleep ?? defaultSleep;
   const purpose = options.purpose ?? "setup";
@@ -77,78 +90,69 @@ export async function runSetupCommand(options: SetupCommandOptions = {}): Promis
   if (existing) {
     if (purpose === "rehatch") {
       if (!io.isInteractive) {
-        throw new Error("EveryBuddy needs confirmation before replacing the current companion.");
+        throw new Error(text.needReplaceConfirmation);
       }
 
-      const confirmed = await io.confirm("Replace your current companion with a new draw?", false);
+      const confirmed = await io.confirm(text.replaceCompanionConfirm, false);
       if (!confirmed) {
-        io.writeLine("Rehatch cancelled.");
+        io.writeLine(text.rehatchCancelled);
         return;
       }
     } else if (purpose === "setup") {
-      io.writeLine("A companion is already hatched.");
-      io.writeLine(dim(`${existing.soul.name} is still bound to this terminal.`));
+      io.writeLine(text.companionExistsTitle);
+      io.writeLine(dim(text.stillBound(existing.soul.name)));
 
       if (io.isInteractive) {
-        const reroll = await io.confirm("Draw a new companion now?", false);
+        const reroll = await io.confirm(text.drawNewCompanionNow, false);
         if (!reroll) {
           await installFlow({ io });
           return;
         }
       } else {
-        throw new Error("A companion already exists. Run `buddy rehatch` to replace it.");
+        throw new Error(text.companionExistsError);
       }
     }
   }
 
-  const resolvedConfig = await resolveBuddyConfig({
-    model: options.model,
-    apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
-    ...(options.storageDir ? { storageDir: options.storageDir } : {}),
-  });
-  const userId = resolveUserId(options.user);
-  const bones = rollCompanion(userId);
+  const userId = resolveSetupUserId(options.user, existing);
+  const template =
+    existing && (purpose === "rehatch" || purpose === "setup")
+      ? selectReplacementBundledCompanionTemplate(userId, existing)
+      : selectBundledCompanionTemplate(userId);
+  const record = buildBundledCompanionRecord(userId, template);
   const scene: HatchSceneState = {
     step: "bones_reveal",
     userId,
-    bones,
+    bones: record.bones,
+    record,
     attempt: 0,
   };
 
-  io.writeLine(purpose === "rehatch" ? "Rebinding EveryBuddy..." : "EveryBuddy is waking up...");
-  await playBonesReveal(scene, io, sleep);
+  io.writeLine(purpose === "rehatch" ? text.rebinding : text.wakingUp);
+  io.writeLine(dim(text.seedLocked(userId)));
+  await sleep(STAGE_DELAY_MS);
 
-  const configured = await ensureRuntimeConfig(resolvedConfig, io);
-  await updateBuddyConfigFile(
-    {
-      provider: "openai",
-      model: configured.model,
-      observerModel: configured.observerModel,
-      baseUrl: configured.baseUrl,
-      language: configured.language,
-      apiKey: configured.apiKey,
-    },
-    configured.storageDir,
-  );
-  const providerFactory = options.providerFactory ?? defaultProviderFactory;
-  const provider = providerFactory({
-    apiKey: configured.apiKey,
-    model: configured.model,
-    baseUrl: configured.baseUrl,
+  await playGachaAnimation({ record, language, io, sleep });
+
+  await writeCompanionRecord(record, options.storageDir);
+  io.writeLine("");
+  io.writeLine(text.savedTo(companionFilePath(options.storageDir)));
+  io.writeLine(text.installTmuxNext);
+
+  const resolvedConfig = await resolveBuddyConfig({
+    ...(options.storageDir ? { storageDir: options.storageDir } : {}),
   });
-  const soul = await imprintSoul(scene, provider, configured.language, io);
-  const record = buildCompanionRecord(userId, bones, soul);
+  await ensureRuntimeConfig(resolvedConfig, io);
 
-  await writeCompanionRecord(record, configured.storageDir);
-  await playFinalReveal(record, configured.storageDir, io, sleep);
   await installFlow({ io });
 }
 
 export async function getBuddyHomeOutput(options: {
   companion: CompanionRecord;
+  language: BuddyLanguage;
   detectInstallStatus?: (() => Promise<TmuxInstallStatus>) | undefined;
 }): Promise<string> {
+  const text = uiText(options.language);
   const status = await (options.detectInstallStatus ?? detectTmuxInstallStatus)().catch(() => ({
     tmuxAvailable: false,
     shellSupported: false,
@@ -157,14 +161,12 @@ export async function getBuddyHomeOutput(options: {
   }));
 
   const lines = [
-    renderCompanionCard(options.companion),
+    renderCompanionCard(options.companion, { language: options.language }),
     "",
-    dim("EveryBuddy is already hatched."),
-    status.hookInstalled
-      ? "tmux follow mode is installed. Open a new tmux window to see it."
-      : "Run `buddy install tmux` to add the sidecar to tmux.",
-    "Run `buddy pet` to view this card again.",
-    "Run `buddy rehatch` to draw a new companion.",
+    dim(text.alreadyHatched),
+    status.hookInstalled ? text.tmuxInstalledHint : text.installTmuxHint,
+    text.petAgainHint,
+    text.rehatchHint,
   ];
 
   return lines.join("\n");
@@ -173,62 +175,107 @@ export async function getBuddyHomeOutput(options: {
 async function ensureRuntimeConfig(
   config: Awaited<ReturnType<typeof resolveBuddyConfig>>,
   io: PromptIO,
-): Promise<{
-  apiKey: string;
-  model: string;
-  observerModel: string | undefined;
-  baseUrl: string;
-  language: typeof config.language;
-  storageDir: string;
-}> {
+): Promise<void> {
   if (config.apiKey) {
-    return {
-      apiKey: config.apiKey,
-      model: config.model,
-      observerModel: config.observerModel,
-      baseUrl: config.baseUrl ?? "",
-      language: config.language,
-      storageDir: config.storageDir,
-    };
+    return;
   }
 
   if (!io.isInteractive) {
-    throw new Error("Missing API key. Set OPENAI_API_KEY or run `buddy` in an interactive terminal.");
+    return;
   }
 
-  const apiKey = (await io.prompt("Paste your OpenAI-compatible API key: ")).trim();
+  io.writeLine("");
+  io.writeLine("Choose your LLM provider (powers the tmux sidecar observer):");
+  io.writeLine(`  1. OpenAI        (default: ${PROVIDER_DEFAULTS.openai.model})`);
+  io.writeLine(`  2. Anthropic     (default: ${PROVIDER_DEFAULTS.anthropic.model})`);
+  io.writeLine("  3. Custom        (OpenAI-compatible, you provide baseUrl + model)");
+  io.writeLine("  4. Skip          (set up later with env vars)");
+  io.writeLine("");
+
+  const choice = (await io.prompt("Enter 1, 2, 3, or 4 [1]: ")).trim() || "1";
+
+  if (choice === "4") {
+    io.writeLine(dim("Skipped. Set OPENAI_API_KEY or ANTHROPIC_API_KEY later to enable the observer."));
+    return;
+  }
+
+  let provider: BuddyProvider;
+  let model = config.model;
+  let observerModel = config.observerModel;
+  let baseUrl = config.baseUrl;
+
+  if (choice === "2") {
+    provider = "anthropic";
+    const defaults = PROVIDER_DEFAULTS.anthropic;
+    model = model || defaults.model;
+    observerModel = observerModel ?? defaults.observerModel;
+    baseUrl = baseUrl || defaults.baseUrl;
+  } else if (choice === "3") {
+    provider = "custom";
+    baseUrl = (await io.prompt("Base URL (OpenAI-compatible): ")).trim();
+    if (!baseUrl) {
+      io.writeLine(dim("No base URL provided. Skipping provider setup."));
+      return;
+    }
+    model = (await io.prompt("Model name: ")).trim();
+    if (!model) {
+      io.writeLine(dim("No model provided. Skipping provider setup."));
+      return;
+    }
+    observerModel = model;
+  } else {
+    provider = "openai";
+    const defaults = PROVIDER_DEFAULTS.openai;
+    model = model || defaults.model;
+    observerModel = observerModel ?? defaults.observerModel;
+    baseUrl = baseUrl || defaults.baseUrl;
+  }
+
+  const keyLabel = provider === "anthropic" ? "Anthropic" : provider === "custom" ? "Custom provider" : "OpenAI";
+  const apiKey = (await io.prompt(`Paste your ${keyLabel} API key: `)).trim();
   if (!apiKey) {
-    throw new Error("EveryBuddy could not continue without an API key.");
+    io.writeLine(dim("No API key provided. Skipping provider setup."));
+    return;
+  }
+
+  const text = uiText(config.language);
+  const testLabel = config.language === "zh" ? "测试连接" : "Testing connection";
+  try {
+    await runWithSpinner(io, testLabel, async () => {
+      const testProvider = createProvider({
+        provider,
+        apiKey,
+        model: model!,
+        baseUrl: baseUrl!,
+        systemPrompt: "Reply with exactly: ok",
+      });
+      await testProvider.complete("ping");
+    });
+  } catch {
+    io.writeLine(dim(text.providerTestFailed));
   }
 
   await updateBuddyConfigFile(
     {
-      provider: "openai",
-      model: config.model,
-      observerModel: config.observerModel,
-      baseUrl: config.baseUrl,
+      provider,
+      model,
+      observerModel,
+      baseUrl,
       language: config.language,
       apiKey,
     },
     config.storageDir,
   );
-  io.writeLine(`Saved API key to ${path.join(config.storageDir, "config.json")}.`);
-
-  return {
-    apiKey,
-    model: config.model,
-    observerModel: config.observerModel,
-    baseUrl: config.baseUrl ?? "",
-    language: config.language,
-    storageDir: config.storageDir,
-  };
+  io.writeLine(dim(`Saved config to ${path.join(config.storageDir, "config.json")}.`));
 }
 
 async function playBonesReveal(
   scene: HatchSceneState,
+  language: BuddyLanguage,
   io: PromptIO,
   sleep: (ms: number) => Promise<void>,
 ): Promise<void> {
+  const text = uiText(language);
   const species = SPECIES[scene.bones.species];
   const eye = EYES[scene.bones.eye];
   const spriteFrame = species?.frames[0];
@@ -239,16 +286,22 @@ async function playBonesReveal(
   const [peakStat, peakValue] = getPeakStat(scene.bones.stats);
   const [dumpStat, dumpValue] = getDumpStat(scene.bones.stats);
 
-  io.writeLine(colorize("Bones Reveal", scene.bones.rarity.color));
-  io.writeLine(dim(`seed locked to ${scene.userId}`));
+  io.writeLine(colorize(text.bonesReveal, scene.bones.rarity.color));
+  io.writeLine(dim(text.seedLocked(scene.userId)));
   await sleep(STAGE_DELAY_MS);
   io.writeLine(
-    `${colorize("rarity", scene.bones.rarity.color)} ${scene.bones.rarity.name} ${scene.bones.rarity.stars}`,
+    `${colorize(text.rarityLabel.toLowerCase(), scene.bones.rarity.color)} ${localizeRarityName(scene.bones.rarity.name, language)} ${scene.bones.rarity.stars}`,
   );
   await sleep(STAGE_DELAY_MS);
-  io.writeLine(`${colorize("species", scene.bones.color.accent)} ${species?.name ?? scene.bones.species}`);
-  io.writeLine(`${colorize("eyes", scene.bones.color.accent)} ${eye?.label ?? scene.bones.eye}`);
-  io.writeLine(`${colorize("hat", scene.bones.color.accent)} ${scene.bones.hat}`);
+  io.writeLine(
+    `${colorize(text.speciesLabel.toLowerCase(), scene.bones.color.accent)} ${localizeSpeciesName(scene.bones.species, species?.name ?? scene.bones.species, language)}`,
+  );
+  io.writeLine(
+    `${colorize(text.eyesLabel.toLowerCase(), scene.bones.color.accent)} ${localizeEyeLabel(scene.bones.eye, eye?.label ?? scene.bones.eye, language)}`,
+  );
+  io.writeLine(
+    `${colorize(text.hatLabel.toLowerCase(), scene.bones.color.accent)} ${localizeHatLabel(scene.bones.hat, HATS[scene.bones.hat]?.label ?? scene.bones.hat, language)}`,
+  );
   await sleep(STAGE_DELAY_MS);
   if (sprite.length > 0) {
     io.writeLine("");
@@ -257,57 +310,56 @@ async function playBonesReveal(
     }
   }
   io.writeLine("");
-  io.writeLine(dim(`peak ${peakStat.toLowerCase()} ${peakValue} · flaw ${dumpStat.toLowerCase()} ${dumpValue}`));
+  io.writeLine(
+    dim(
+      `${text.peakMarker} ${localizeStatName(peakStat, language)} ${peakValue} · ${text.dumpMarker} ${localizeStatName(dumpStat, language)} ${dumpValue}`,
+    ),
+  );
   io.writeLine("");
 }
 
 async function imprintSoul(
   scene: HatchSceneState,
-  provider: AIProvider,
-  language: "zh" | "en",
+  soul: CompanionSoul,
+  language: BuddyLanguage,
   io: PromptIO,
+  sleep: (ms: number) => Promise<void>,
 ): Promise<CompanionSoul> {
-  while (true) {
-    scene.step = "soul_imprint";
-    scene.attempt += 1;
-    io.writeLine(colorize("Soul Imprint", scene.bones.color.primary));
-    io.writeLine(dim("Rarity anchors the shell. The name is still forming."));
+  const text = uiText(language);
+  scene.step = "soul_imprint";
+  scene.attempt += 1;
+  io.writeLine(colorize(text.soulImprint, scene.bones.color.primary));
+  io.writeLine(dim(text.soulImprintLead));
 
-    try {
-      const soul = await runWithSpinner(io, "Binding the soul", () =>
-        hatchSoul(scene.bones, provider, language),
-      );
-      scene.soul = soul;
-      return soul;
-    } catch (error) {
-      scene.error = error instanceof Error ? error.message : String(error);
-      io.writeLine(`Soul imprint failed: ${scene.error}`);
+  const bindingLabel = language === "zh" ? "正在绑定灵魂" : "Binding the soul";
+  const boundSoul = await runWithSpinner(io, bindingLabel, async () => {
+    await sleep(STAGE_DELAY_MS * 3);
+    return cloneSoul(soul);
+  });
 
-      if (!io.isInteractive) {
-        throw error;
-      }
-
-      const retry = await io.confirm("Retry the soul imprint with the same draw?", true);
-      if (!retry) {
-        throw error instanceof Error ? error : new Error(String(error));
-      }
-    }
+  scene.soul = boundSoul;
+  const localizedSoul = getLocalizedSoulCopy({ templateId: scene.record?.templateId ?? undefined, soul: boundSoul }, language);
+  if (localizedSoul.tagline) {
+    io.writeLine(dim(localizedSoul.tagline));
   }
+  return boundSoul;
 }
 
 async function playFinalReveal(
   record: CompanionRecord,
-  storageDir: string,
+  storageDir: string | undefined,
+  language: BuddyLanguage,
   io: PromptIO,
   sleep: (ms: number) => Promise<void>,
 ): Promise<void> {
+  const text = uiText(language);
   io.writeLine("");
-  io.writeLine(colorize("Final Reveal", record.bones.rarity.color));
+  io.writeLine(colorize(text.finalReveal, record.bones.rarity.color));
   await sleep(STAGE_DELAY_MS);
-  io.writeLine(renderCompanionCard(record));
+  io.writeLine(renderCompanionCard(record, { language }));
   io.writeLine("");
-  io.writeLine(`Saved to ${companionFilePath(storageDir)}`);
-  io.writeLine("Next: install tmux follow mode so this companion can live beside your shell.");
+  io.writeLine(text.savedTo(companionFilePath(storageDir)));
+  io.writeLine(text.installTmuxNext);
 }
 
 async function runWithSpinner<T>(io: PromptIO, label: string, task: () => Promise<T>): Promise<T> {
@@ -333,8 +385,25 @@ async function runWithSpinner<T>(io: PromptIO, label: string, task: () => Promis
   }
 }
 
-function defaultProviderFactory(params: { apiKey: string; model: string; baseUrl: string }): AIProvider {
-  return new OpenAICompatibleProvider(params);
+function resolveSetupUserId(
+  cliUserId: string | undefined,
+  existing: CompanionRecord | null,
+): string {
+  if (cliUserId?.trim()) {
+    return resolveUserId(cliUserId);
+  }
+
+  return existing?.userId ?? resolveUserId();
+}
+
+function cloneSoul(soul: CompanionSoul): CompanionSoul {
+  return {
+    name: soul.name,
+    ...(soul.tagline ? { tagline: soul.tagline } : {}),
+    personality: soul.personality,
+    observerProfile: { ...soul.observerProfile },
+    modelUsed: soul.modelUsed,
+  };
 }
 
 function defaultSleep(ms: number): Promise<void> {

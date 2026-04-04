@@ -45,6 +45,16 @@ export const SPECIES: Record<string, SpeciesDefinition> = {
       ["            ", "   /\\-/\\    ", "  ( {E}   {E})  ", "  (  ω  )   ", "  (\")_(\")   "],
     ],
   },
+  maltese: {
+    id: "maltese",
+    name: "Maltese",
+    color: { primary: "#F8FAFC", accent: "#94A3B8" },
+    frames: [
+      ["  ˙ ᵕ ˙    ", " /)   (\\   ", "( {E} · {E} )  ", " ( ᵕωᵕ )   ", "  u   u    "],
+      ["  ˙ ᵕ ˙    ", " /)   (\\   ", "( -   - )  ", " ( ᵕωᵕ )   ", "  u   u    "],
+      ["  ˙ ᵕ ˙    ", " /)   (\\   ", "( {E} · {E} )  ", " ( ᵕuᵕ )   ", "  u   u    "],
+    ],
+  },
   dragon: {
     id: "dragon",
     name: "Dragon",
@@ -269,6 +279,8 @@ export function renderCompactFace(speciesId: string, eyeChar: string): string {
       return `(${eyeChar}${eyeChar})`;
     case "cat":
       return `=${eyeChar}ω${eyeChar}=`;
+    case "maltese":
+      return `(${eyeChar}w${eyeChar})~`;
     case "dragon":
       return `<${eyeChar}~${eyeChar}>`;
     case "octopus":

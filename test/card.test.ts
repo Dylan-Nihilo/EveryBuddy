@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { getCardOutput, NO_COMPANION_MESSAGE } from "../src/cli/card.js";
+import { getCardOutput } from "../src/cli/card.js";
 import { renderCompanionCard } from "../src/render/card.js";
 import type { CompanionRecord } from "../src/types/companion.js";
 
@@ -13,15 +13,15 @@ test("getCardOutput prompts the user to hatch when no persisted companion exists
 
   try {
     const output = await getCardOutput(storageDir);
-    assert.equal(output, NO_COMPANION_MESSAGE);
-    assert.equal(output, "No companion found. Run `buddy` to hatch one.");
+    assert.equal(output, "未找到宠物。先运行 `buddy` 来抽取一只。");
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }
 });
 
-test("renderCompanionCard surfaces rarity and companion identity prominently", () => {
-  const output = renderCompanionCard({
+test("renderCompanionCard surfaces localized rarity and companion identity prominently", () => {
+  const record = {
+    templateId: "sassy-tanuki",
     userId: "dylanthomas",
     bones: {
       userId: "dylanthomas",
@@ -58,13 +58,21 @@ test("renderCompanionCard surfaces rarity and companion identity prominently", (
         sharpness: 4,
         patience: 2,
       },
-      modelUsed: "qwen3.5-plus",
+      modelUsed: "bundled",
     },
     createdAt: "2026-04-02T08:09:26.636Z",
-  } satisfies CompanionRecord);
+  } satisfies CompanionRecord;
+  const zhOutput = renderCompanionCard(record);
+  const enOutput = renderCompanionCard(record, { language: "en" });
 
-  assert.match(output, /EveryBuddy Companion/);
-  assert.match(output, /RARE/);
-  assert.match(output, /Sassy Tanuki/);
-  assert.match(output, /Rarity\s+Rare \*\*\*/);
+  assert.match(zhOutput, /╭─/);
+  assert.match(zhOutput, /稀有/);
+  assert.match(zhOutput, /★ ★ ★/);
+  assert.match(zhOutput, /Sassy Tanuki/);
+  assert.match(zhOutput, /█/);
+  assert.doesNotMatch(zhOutput, /bundled/);
+
+  assert.match(enOutput, /╭─/);
+  assert.match(enOutput, /RARE/);
+  assert.match(enOutput, /Sassy Tanuki/);
 });

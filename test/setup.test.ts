@@ -4,11 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { buildBundledCompanionRecord, selectBundledCompanionTemplate } from "../src/atlas/bundled.js";
 import { rollCompanion } from "../src/bones/roll.js";
-import { readBuddyConfigFile } from "../src/storage/config.js";
-import { readCompanionRecord, writeCompanionRecord } from "../src/storage/companion.js";
 import { runBuddyHomeCommand, runSetupCommand } from "../src/cli/setup.js";
 import type { PromptIO } from "../src/cli/io.js";
+import { readBuddyConfigFile } from "../src/storage/config.js";
+import { readCompanionRecord, writeCompanionRecord } from "../src/storage/companion.js";
 import type { CompanionRecord } from "../src/types/companion.js";
 
 test("runBuddyHomeCommand starts first-run setup when no companion exists", async () => {
@@ -61,36 +62,26 @@ test("runBuddyHomeCommand shows the current pet card and tmux guidance once a co
     });
 
     assert.match(io.output, /Pocket Butler/);
-    assert.match(io.output, /Run `buddy install tmux` to add the sidecar to tmux\./);
-    assert.match(io.output, /Run `buddy pet` to view this card again\./);
-    assert.match(io.output, /Run `buddy rehatch` to draw a new companion\./);
+    assert.match(io.output, /运行 `buddy install tmux` 把 sidecar 接进 tmux。/);
+    assert.match(io.output, /运行 `buddy pet` 再看一次这张卡。/);
+    assert.match(io.output, /运行 `buddy rehatch` 重抽一只新宠物。/);
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }
 });
 
-test("runSetupCommand prompts for a missing API key, saves config, and persists the new companion", async () => {
-  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-setup-config-"));
+test("runSetupCommand draws a bundled companion locally and prompts for provider config", async () => {
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-setup-bundled-"));
   const io = createTestIO({
-    prompts: ["sk-test-key"],
+    prompts: ["4"],
   });
-  const previousEnv = snapshotApiEnv();
-  delete process.env.OPENAI_API_KEY;
-  delete process.env.DASHSCOPE_API_KEY;
+  const expectedTemplate = selectBundledCompanionTemplate("setup-user");
 
   try {
     await runSetupCommand({
       storageDir,
       user: "setup-user",
-      model: "test-model",
-      baseUrl: "https://provider.example/v1",
       io,
-      providerFactory: ({ model }) => ({
-        modelId: model,
-        async complete() {
-          return '{"name":"Ember Tanuki","tagline":"A low ember watching every keystroke.","personality":"Quiet, precise, and always watching your terminal habits.","observerProfile":{"voice":"dry","chattiness":2,"sharpness":3,"patience":4}}';
-        },
-      }),
       installFlow: async () => undefined,
       sleep: async () => undefined,
     });
@@ -98,102 +89,47 @@ test("runSetupCommand prompts for a missing API key, saves config, and persists 
     const config = await readBuddyConfigFile(storageDir);
     const companion = await readCompanionRecord(storageDir);
 
-    assert.equal(config.apiKey, "sk-test-key");
-    assert.equal(config.model, "test-model");
-    assert.equal(config.observerModel, undefined);
-    assert.equal(config.baseUrl, "https://provider.example/v1");
-    assert.equal(companion?.soul.name, "Ember Tanuki");
-    assert.equal(companion?.soul.tagline, "A low ember watching every keystroke.");
-    assert.equal(companion?.soul.observerProfile.voice, "dry");
-    assert.equal(companion?.soul.modelUsed, "test-model");
-    assert.match(io.output, /Saved API key to/);
-    assert.match(io.output, /Final Reveal/);
+    assert.deepEqual(config, {});
+    assert.equal(companion?.templateId, expectedTemplate.id);
+    assert.equal(companion?.soul.name, expectedTemplate.soul.name);
+    assert.equal(companion?.soul.tagline, expectedTemplate.soul.tagline);
+    assert.equal(companion?.soul.modelUsed, "bundled");
+    assert.match(io.output, /seed 已锁定到/);
+    assert.match(io.output, /╭─/);
+    assert.match(io.output, /已保存到/);
+    assert.match(io.output, /Choose your LLM provider/);
+    assert.match(io.output, /Skipped\. Set OPENAI_API_KEY/);
   } finally {
-    restoreApiEnv(previousEnv);
     await rm(storageDir, { recursive: true, force: true });
   }
 });
 
-test("runSetupCommand does not write companion.json when soul imprint fails", async () => {
-  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-setup-fail-"));
+test("runSetupCommand rehatches to a different bundled template even for legacy records without templateId", async () => {
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-rehatch-legacy-"));
   const io = createTestIO({
-    prompts: ["sk-fail-key"],
-    confirms: [false],
-  });
-  const previousEnv = snapshotApiEnv();
-  delete process.env.OPENAI_API_KEY;
-  delete process.env.DASHSCOPE_API_KEY;
-
-  try {
-    await assert.rejects(
-      () =>
-        runSetupCommand({
-          storageDir,
-          user: "failure-user",
-          model: "failure-model",
-          baseUrl: "https://provider.example/v1",
-          io,
-          providerFactory: ({ model }) => ({
-            modelId: model,
-            async complete() {
-              throw new Error("upstream 500");
-            },
-          }),
-          installFlow: async () => undefined,
-          sleep: async () => undefined,
-        }),
-      /upstream 500/,
-    );
-
-    assert.equal(await readCompanionRecord(storageDir), null);
-    assert.match(io.output, /Soul imprint failed: upstream 500/);
-  } finally {
-    restoreApiEnv(previousEnv);
-    await rm(storageDir, { recursive: true, force: true });
-  }
-});
-
-test("runSetupCommand retries soul imprint and succeeds on the second attempt", async () => {
-  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-setup-retry-"));
-  const io = createTestIO({
-    prompts: ["sk-retry-key"],
     confirms: [true],
   });
-  const previousEnv = snapshotApiEnv();
-  delete process.env.OPENAI_API_KEY;
-  delete process.env.DASHSCOPE_API_KEY;
-  let attempts = 0;
+  const original = buildBundledCompanionRecord(
+    "rehatch-user",
+    selectBundledCompanionTemplate("rehatch-user"),
+  );
+  const { templateId: _removed, ...legacyOriginal } = original;
 
   try {
+    await writeCompanionRecord(legacyOriginal, storageDir);
     await runSetupCommand({
       storageDir,
-      user: "retry-user",
-      model: "retry-model",
-      baseUrl: "https://provider.example/v1",
       io,
-      providerFactory: ({ model }) => ({
-        modelId: model,
-        async complete() {
-          attempts += 1;
-          if (attempts === 1) {
-            throw new Error("temporary upstream failure");
-          }
-
-          return '{"name":"Retry Fox","tagline":"It waits where failures learn to blink.","personality":"It remembers your stumbles and smirks when you recover.","observerProfile":{"voice":"playful","chattiness":4,"sharpness":4,"patience":2}}';
-        },
-      }),
+      purpose: "rehatch",
       installFlow: async () => undefined,
       sleep: async () => undefined,
     });
 
-    const companion = await readCompanionRecord(storageDir);
-    assert.equal(attempts, 2);
-    assert.equal(companion?.soul.name, "Retry Fox");
-    assert.equal(companion?.soul.tagline, "It waits where failures learn to blink.");
-    assert.match(io.output, /Soul imprint failed: temporary upstream failure/);
-    assert.match(io.output, /Final Reveal/);
+    const rehatch = await readCompanionRecord(storageDir);
+    assert.equal(rehatch?.userId, "rehatch-user");
+    assert.notEqual(rehatch?.templateId, original.templateId);
+    assert.notEqual(rehatch?.bones.species, original.bones.species);
   } finally {
-    restoreApiEnv(previousEnv);
     await rm(storageDir, { recursive: true, force: true });
   }
 });
@@ -211,15 +147,12 @@ test("runSetupCommand cancels rehatch when the user declines overwrite", async (
       storageDir,
       io,
       purpose: "rehatch",
-      providerFactory: () => {
-        throw new Error("provider should not be called when rehatch is cancelled");
-      },
       installFlow: async () => undefined,
       sleep: async () => undefined,
     });
 
     assert.deepEqual(await readCompanionRecord(storageDir), existing);
-    assert.match(io.output, /Rehatch cancelled\./);
+    assert.match(io.output, /已取消重抽。/);
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }
@@ -239,9 +172,6 @@ test("runSetupCommand keeps the current companion and still runs tmux install gu
       storageDir,
       io,
       purpose: "setup",
-      providerFactory: () => {
-        throw new Error("provider should not be called when reroll is declined");
-      },
       installFlow: async () => {
         installCalls += 1;
       },
@@ -250,8 +180,8 @@ test("runSetupCommand keeps the current companion and still runs tmux install gu
 
     assert.equal(installCalls, 1);
     assert.deepEqual(await readCompanionRecord(storageDir), existing);
-    assert.match(io.output, /A companion is already hatched\./);
-    assert.match(io.output, /Resident Fox is still bound to this terminal\./);
+    assert.match(io.output, /已经有一只宠物了。/);
+    assert.match(io.output, /Resident Fox 还绑定在这个终端上。/);
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }
@@ -313,22 +243,4 @@ function createCompanionRecord(userId: string, name: string): CompanionRecord {
     },
     createdAt: "2026-04-02T00:00:00.000Z",
   };
-}
-
-function snapshotApiEnv(): Record<"OPENAI_API_KEY" | "DASHSCOPE_API_KEY", string | undefined> {
-  return {
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    DASHSCOPE_API_KEY: process.env.DASHSCOPE_API_KEY,
-  };
-}
-
-function restoreApiEnv(snapshot: Record<"OPENAI_API_KEY" | "DASHSCOPE_API_KEY", string | undefined>): void {
-  for (const [key, value] of Object.entries(snapshot)) {
-    if (value === undefined) {
-      delete process.env[key];
-      continue;
-    }
-
-    process.env[key] = value;
-  }
 }

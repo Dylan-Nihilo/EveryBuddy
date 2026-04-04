@@ -51,7 +51,11 @@ function parseCompanionRecord(value: unknown): CompanionRecord {
     throw new Error("Companion file must contain a JSON object.");
   }
 
-  const { userId, bones, soul, createdAt } = value;
+  const { templateId, userId, bones, soul, createdAt } = value;
+
+  if (templateId !== undefined && (typeof templateId !== "string" || templateId.trim().length === 0)) {
+    throw new Error("Companion `templateId` must be a non-empty string when present.");
+  }
 
   if (typeof userId !== "string" || userId.trim().length === 0) {
     throw new Error("Companion `userId` must be a non-empty string.");
@@ -62,6 +66,7 @@ function parseCompanionRecord(value: unknown): CompanionRecord {
   }
 
   return {
+    ...(typeof templateId === "string" ? { templateId: templateId.trim() } : {}),
     userId,
     bones: parseCompanionBones(bones),
     soul: parseCompanionSoul(soul),

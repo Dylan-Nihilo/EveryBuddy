@@ -1,4 +1,4 @@
-import type { CompanionRecord } from "../types/companion.js";
+import type { BuddyLanguage, CompanionRecord } from "../types/companion.js";
 
 export type ShellEventType = "pane_active" | "input_update" | "command_start" | "command_end";
 export type SidecarStatus = "idle" | "typing" | "thinking" | "finished";
@@ -77,6 +77,7 @@ export interface SidecarState {
   windowId: string;
   sidecarPaneId: string;
   targetPaneId: string | undefined;
+  language: BuddyLanguage;
   companion: CompanionRecord | null;
   frameTick: number;
   renderMode: RenderMode;

@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { constants as fsConstants } from "node:fs";
 
+import { uiText } from "../i18n/ui.js";
+import { resolveBuddyConfig } from "../storage/config.js";
 import { createConsoleIO, type PromptIO } from "./io.js";
 
 export const EVERYBUDDY_HOOK_START = "# >>> EveryBuddy tmux hook >>>";
@@ -31,44 +33,47 @@ export interface TmuxInstallResult {
 
 export async function runInstallTmuxCommand(options: InstallTmuxCommandOptions = {}): Promise<TmuxInstallResult> {
   const io = options.io ?? createConsoleIO();
+  const storageDir = path.join(options.homeDir ?? os.homedir(), ".terminal-buddy");
+  const language = (await resolveBuddyConfig({ storageDir })).language;
+  const text = uiText(language);
   const status = await detectTmuxInstallStatus(options);
 
   if (!status.tmuxAvailable) {
-    io.writeLine("tmux is not installed yet.");
-    io.writeLine("Install it first, then run `buddy install tmux` again.");
-    io.writeLine("macOS: `brew install tmux`");
+    io.writeLine(text.tmuxMissing);
+    io.writeLine(text.tmuxMissingHint);
+    io.writeLine(text.macInstallTmux);
     return { status: "tmux_missing", zshrcPath: status.zshrcPath };
   }
 
   if (!status.shellSupported) {
-    io.writeLine("Only zsh is supported for terminal follow mode right now.");
-    io.writeLine("Switch to zsh, then run `buddy install tmux` again.");
+    io.writeLine(text.zshOnly);
+    io.writeLine(text.zshOnlyHint);
     return { status: "unsupported_shell", zshrcPath: status.zshrcPath };
   }
 
   if (status.hookInstalled) {
-    io.writeLine(`EveryBuddy is already installed in ${status.zshrcPath}.`);
-    io.writeLine(`Run \`source ${status.zshrcPath}\` in this shell.`);
-    io.writeLine("Then open a new tmux window and EveryBuddy will auto-attach there.");
+    io.writeLine(text.alreadyInstalled(status.zshrcPath));
+    io.writeLine(text.sourceHint(status.zshrcPath));
+    io.writeLine(text.openTmuxHint);
     return { status: "already_installed", zshrcPath: status.zshrcPath };
   }
 
   if (!io.isInteractive) {
-    throw new Error("EveryBuddy needs an interactive terminal to modify ~/.zshrc.");
+    throw new Error(text.interactiveRequired);
   }
 
-  const confirmed = await io.confirm("Install EveryBuddy tmux follow mode into ~/.zshrc now?", true);
+  const confirmed = await io.confirm(text.installConfirm, true);
   if (!confirmed) {
-    io.writeLine("Skipped tmux installation.");
-    io.writeLine("Run `buddy install tmux` when you want EveryBuddy to auto-follow in tmux.");
+    io.writeLine(text.skippedInstall);
+    io.writeLine(text.installLaterHint);
     return { status: "skipped", zshrcPath: status.zshrcPath };
   }
 
   await installTmuxHook({ zshrcPath: status.zshrcPath });
-  io.writeLine(`Installed EveryBuddy into ${status.zshrcPath}.`);
-  io.writeLine(`Run \`source ${status.zshrcPath}\` in this shell.`);
-  io.writeLine("Then open a new tmux session or tmux window.");
-  io.writeLine("EveryBuddy will appear on the right side automatically.");
+  io.writeLine(text.installedInto(status.zshrcPath));
+  io.writeLine(text.sourceHint(status.zshrcPath));
+  io.writeLine(text.openTmuxSessionHint);
+  io.writeLine(text.autoAppearHint);
   return { status: "installed", zshrcPath: status.zshrcPath };
 }
 

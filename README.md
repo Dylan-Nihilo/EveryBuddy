@@ -1,8 +1,8 @@
 # EveryBuddy
 
-EveryBuddy 是一个终端宠物。第一次运行 `buddy` 时，它会直接进入抽卡式初始化：先揭晓骨架和稀有度，再做一次 AI soul imprint，最后把这只宠物保存到 `~/.terminal-buddy/companion.json`。
+EveryBuddy 是一个终端宠物。第一次运行 `buddy` 时，它会直接进入抽卡式初始化：先揭晓骨架和稀有度，再从内置 atlas 里绑定一只固定宠物，最后把它保存到 `~/.terminal-buddy/companion.json`。
 
-当前产品形态先只打通 `tmux + zsh`。你抽到的宠物可以继续挂在 tmux sidecar 里，跟着你的 shell 命令做反应。
+抽卡现在完全本地执行，不需要 API key，也不会因为上游模型波动把同一只宠物抽成不同名字。模型只留给后续 sidecar runtime 说话时使用。
 
 ## Quick Start
 
@@ -18,13 +18,7 @@ npm install -g everybuddy
 buddy
 ```
 
-如果本机还没有配置 API key，初始化流程会直接在终端里提示你输入，并写入：
-
-```text
-~/.terminal-buddy/config.json
-```
-
-抽卡完成后，查看当前宠物：
+查看当前宠物：
 
 ```bash
 buddy pet
@@ -44,7 +38,9 @@ buddy install tmux
 2. `soul imprint`
 3. `final reveal`
 
-`bones reveal` 完全本地执行，不依赖网络。它会揭晓：
+这三段现在都不依赖网络。
+
+`bones reveal` 会揭晓：
 
 - species
 - rarity
@@ -53,17 +49,14 @@ buddy install tmux
 - stats
 - sprite
 
-`soul imprint` 继续使用非流式 OpenAI-compatible `chat/completions`，生成：
+`soul imprint` 不再请求 provider，而是从内置 companion atlas 绑定固定的：
 
 - name
+- tagline
 - personality
+- observer profile
 
-如果 soul imprint 失败：
-
-- 不会写入 `companion.json`
-- 会在当前流程里显示失败原因
-- 可以当场重试
-- 重试沿用同一套 bones，不会重新抽卡
+首次抽卡会按 `userId` 稳定选择模板。`buddy rehatch` 会避开当前模板，换成另一只。
 
 ## Commands
 
@@ -84,7 +77,7 @@ buddy install tmux
 - `buddy setup`
   显式重跑首次初始化流程。
 - `buddy rehatch`
-  确认后覆盖当前宠物，重新抽卡。
+  确认后覆盖当前宠物，重新抽一只。
 - `buddy pet`
   显示当前宠物卡。
 - `buddy install tmux`
@@ -100,7 +93,7 @@ buddy attach
 buddy detach
 ```
 
-后续文档主叙事只围绕 `buddy` / `buddy pet` / `buddy install tmux`。
+其中 `buddy hatch` 现在同样走本地 atlas，不再需要模型配置。
 
 ## tmux Follow Mode
 
@@ -120,7 +113,7 @@ source ~/.zshrc
 
 然后新开一个 tmux session 或 tmux window。EveryBuddy 会自动出现在 sidecar 里。
 
-## Configuration
+## Storage
 
 存储目录固定为：
 
@@ -130,19 +123,23 @@ source ~/.zshrc
 
 文件说明：
 
-- `config.json`
-  provider 配置
 - `companion.json`
   当前已绑定宠物
+- `config.json`
+  可选的 runtime observer 模型配置
 
-支持的环境变量：
+## Optional Observer Model Config
+
+抽卡不需要配置任何模型。
+
+如果你后面想让 tmux sidecar 的捧哏反应走模型，可以再手动提供：
 
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`
 - `OPENAI_MODEL`
 - `OPENAI_OBSERVER_MODEL`
-- `EVERYBUDDY_USER_ID`
 - `DASHSCOPE_API_KEY`
+- `EVERYBUDDY_USER_ID`
 
 配置优先级：
 
@@ -154,23 +151,15 @@ CLI flags > env vars > ~/.terminal-buddy/config.json > defaults
 
 - `OPENAI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1`
 - `OPENAI_MODEL=qwen3.5-plus`
+- `OPENAI_OBSERVER_MODEL=qwen3-coder-next`
 
-可选的 observer 小模型：
-
-- `OPENAI_OBSERVER_MODEL=<fast-model>`
-
-如果设置了 `OPENAI_OBSERVER_MODEL`，tmux sidecar 的观察者反应会优先使用这个模型。
-
-当前默认行为：
-
-- 当 `baseUrl` 是 `https://coding.dashscope.aliyuncs.com/v1` 时，observer 默认使用 `qwen3-coder-next`
-- 其他 provider 未显式配置 `OPENAI_OBSERVER_MODEL` 时，observer 回退到 `OPENAI_MODEL`
+这些默认值只影响 runtime observer，不影响抽卡结果。
 
 ## Third-Party OpenAI-Compatible Providers
 
-EveryBuddy 当前只支持非流式 OpenAI-compatible `chat/completions`。
+EveryBuddy 当前只在 runtime observer 上支持非流式 OpenAI-compatible `chat/completions`。
 
-例如直接接第三方兼容上游：
+例如：
 
 ```bash
 OPENAI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1 \
@@ -179,13 +168,6 @@ OPENAI_OBSERVER_MODEL=qwen3-coder-next \
 OPENAI_API_KEY=your-key \
 buddy
 ```
-
-推荐先试：
-
-- `qwen3.5-plus`
-- `kimi-k2.5`
-- `glm-5`
-- `MiniMax-M2.5`
 
 当前限制：
 
@@ -217,11 +199,12 @@ node dist/index.js pet
 
 ```text
 src/
+├── atlas/     bundled companion templates
 ├── bones/     deterministic generation
 ├── cli/       product entry points and advanced commands
 ├── render/    card, sprite, and terminal composition
 ├── runtime/   tmux sidecar, socket bridge, observer
-├── soul/      hatch prompt, parser, provider
+├── soul/      observer prompt, parser, provider
 ├── storage/   config + persisted companion files
 └── types/     shared domain/runtime types
 ```
@@ -231,8 +214,8 @@ src/
 当前已经完成：
 
 - deterministic bones generation
+- bundled companion atlas
 - persisted companion records
-- OpenAI-compatible soul hatch
 - 抽卡式首次运行 onboarding
 - `buddy install tmux`
 - tmux window-level sidecar follow mode
@@ -242,4 +225,4 @@ src/
 
 1. Ghostty / Warp 等非 tmux 终端宿主
 2. 更完整的 sidecar 动画和视觉精修
-3. chat / resident mode / 更强上下文感知
+3. runtime observer 模型接入继续打磨

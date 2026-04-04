@@ -25,6 +25,67 @@ export function dim(text: string): string {
   return `\u001B[2m${text}${RESET}`;
 }
 
+export function italic(text: string): string {
+  if (!process.stdout.isTTY) {
+    return text;
+  }
+
+  return `\u001B[3m${text}${RESET}`;
+}
+
+export function rainbow(text: string): string {
+  if (!process.stdout.isTTY) {
+    return text;
+  }
+
+  const chars = Array.from(text);
+  const visibleCount = chars.filter((c) => c.trim().length > 0).length;
+  let visibleIndex = 0;
+
+  return (
+    chars
+      .map((char) => {
+        if (char.trim().length === 0) {
+          return char;
+        }
+        const hue = (visibleIndex / Math.max(1, visibleCount)) * 360;
+        visibleIndex += 1;
+        const [r, g, b] = hslToRgb(hue, 0.85, 0.65);
+        return `\u001B[38;2;${r};${g};${b}m${char}`;
+      })
+      .join("") + RESET
+  );
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r1 = 0;
+  let g1 = 0;
+  let b1 = 0;
+
+  if (h < 60) {
+    r1 = c; g1 = x;
+  } else if (h < 120) {
+    r1 = x; g1 = c;
+  } else if (h < 180) {
+    g1 = c; b1 = x;
+  } else if (h < 240) {
+    g1 = x; b1 = c;
+  } else if (h < 300) {
+    r1 = x; b1 = c;
+  } else {
+    r1 = c; b1 = x;
+  }
+
+  return [
+    Math.round((r1 + m) * 255),
+    Math.round((g1 + m) * 255),
+    Math.round((b1 + m) * 255),
+  ];
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const value = hex.replace("#", "");
   const normalized = value.length === 3
