@@ -26,25 +26,23 @@ test("runHatchCommand persists the deterministic bundled draw", async () => {
   }
 });
 
-test("runHatchCommand force replaces the current bundled companion with a different one", async () => {
-  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-hatch-force-"));
+test("runHatchCommand rejects when companion already exists", async () => {
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-hatch-block-"));
 
   try {
     await runHatchCommand({
       storageDir,
-      user: "hatch-force-user",
+      user: "hatch-block-user",
     });
     const first = await readCompanionRecord(storageDir);
 
-    await runHatchCommand({
-      storageDir,
-      force: true,
-    });
-    const second = await readCompanionRecord(storageDir);
+    await assert.rejects(
+      () => runHatchCommand({ storageDir }),
+      { message: /already exists/ },
+    );
 
-    assert.equal(second?.userId, "hatch-force-user");
-    assert.notEqual(second?.templateId, first?.templateId);
-    assert.notEqual(second?.bones.species, first?.bones.species);
+    const after = await readCompanionRecord(storageDir);
+    assert.deepEqual(after, first);
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }

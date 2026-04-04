@@ -19,7 +19,7 @@ test("runBuddyHomeCommand starts first-run setup when no companion exists", asyn
     | {
         storageDir?: string | undefined;
         io?: PromptIO | undefined;
-        purpose?: "first_run" | "setup" | "rehatch" | undefined;
+        purpose?: "first_run" | "setup" | undefined;
       }
     | undefined;
 
@@ -64,7 +64,7 @@ test("runBuddyHomeCommand shows the current pet card and tmux guidance once a co
     assert.match(io.output, /Pocket Butler/);
     assert.match(io.output, /运行 `buddy install tmux` 把 sidecar 接进 tmux。/);
     assert.match(io.output, /运行 `buddy pet` 再看一次这张卡。/);
-    assert.match(io.output, /运行 `buddy rehatch` 重抽一只新宠物。/);
+    assert.match(io.output, /╭─/);
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }
@@ -104,55 +104,25 @@ test("runSetupCommand draws a bundled companion locally and prompts for provider
   }
 });
 
-test("runSetupCommand rehatches to a different bundled template even for legacy records without templateId", async () => {
-  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-rehatch-legacy-"));
-  const io = createTestIO({
-    confirms: [true],
-  });
-  const original = buildBundledCompanionRecord(
-    "rehatch-user",
-    selectBundledCompanionTemplate("rehatch-user"),
-  );
-  const { templateId: _removed, ...legacyOriginal } = original;
-
-  try {
-    await writeCompanionRecord(legacyOriginal, storageDir);
-    await runSetupCommand({
-      storageDir,
-      io,
-      purpose: "rehatch",
-      installFlow: async () => undefined,
-      sleep: async () => undefined,
-    });
-
-    const rehatch = await readCompanionRecord(storageDir);
-    assert.equal(rehatch?.userId, "rehatch-user");
-    assert.notEqual(rehatch?.templateId, original.templateId);
-    assert.notEqual(rehatch?.bones.species, original.bones.species);
-  } finally {
-    await rm(storageDir, { recursive: true, force: true });
-  }
-});
-
-test("runSetupCommand cancels rehatch when the user declines overwrite", async () => {
-  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-rehatch-cancel-"));
-  const existing = createCompanionRecord("rehatch-user", "Old Spirit");
-  const io = createTestIO({
-    confirms: [false],
-  });
+test("runSetupCommand blocks re-draw when companion already exists", async () => {
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-no-redraw-"));
+  const existing = createCompanionRecord("block-user", "Old Spirit");
+  const io = createTestIO({});
+  let installCalls = 0;
 
   try {
     await writeCompanionRecord(existing, storageDir);
     await runSetupCommand({
       storageDir,
       io,
-      purpose: "rehatch",
-      installFlow: async () => undefined,
+      purpose: "setup",
+      installFlow: async () => { installCalls += 1; },
       sleep: async () => undefined,
     });
 
     assert.deepEqual(await readCompanionRecord(storageDir), existing);
-    assert.match(io.output, /已取消重抽。/);
+    assert.match(io.output, /已经有一只宠物了。/);
+    assert.equal(installCalls, 1);
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }

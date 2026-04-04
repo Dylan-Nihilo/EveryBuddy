@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   buildBundledCompanionRecord,
   selectBundledCompanionTemplate,
-  selectReplacementBundledCompanionTemplate,
 } from "../atlas/bundled.js";
 import { getDumpStat, getPeakStat } from "../bones/stats.js";
 import { getLocalizedSoulCopy } from "../i18n/companion.js";
@@ -47,7 +46,7 @@ export interface SetupCommandOptions {
   io?: PromptIO | undefined;
   installFlow?: ((params: { io: PromptIO }) => Promise<unknown>) | undefined;
   sleep?: ((ms: number) => Promise<void>) | undefined;
-  purpose?: "first_run" | "setup" | "rehatch" | undefined;
+  purpose?: "first_run" | "setup" | undefined;
 }
 
 export interface BuddyHomeCommandOptions {
@@ -88,37 +87,14 @@ export async function runSetupCommand(options: SetupCommandOptions = {}): Promis
   const existing = await readCompanionRecord(options.storageDir);
 
   if (existing) {
-    if (purpose === "rehatch") {
-      if (!io.isInteractive) {
-        throw new Error(text.needReplaceConfirmation);
-      }
-
-      const confirmed = await io.confirm(text.replaceCompanionConfirm, false);
-      if (!confirmed) {
-        io.writeLine(text.rehatchCancelled);
-        return;
-      }
-    } else if (purpose === "setup") {
-      io.writeLine(text.companionExistsTitle);
-      io.writeLine(dim(text.stillBound(existing.soul.name)));
-
-      if (io.isInteractive) {
-        const reroll = await io.confirm(text.drawNewCompanionNow, false);
-        if (!reroll) {
-          await installFlow({ io });
-          return;
-        }
-      } else {
-        throw new Error(text.companionExistsError);
-      }
-    }
+    io.writeLine(text.companionExistsTitle);
+    io.writeLine(dim(text.stillBound(existing.soul.name)));
+    await installFlow({ io });
+    return;
   }
 
   const userId = resolveSetupUserId(options.user, existing);
-  const template =
-    existing && (purpose === "rehatch" || purpose === "setup")
-      ? selectReplacementBundledCompanionTemplate(userId, existing)
-      : selectBundledCompanionTemplate(userId);
+  const template = selectBundledCompanionTemplate(userId);
   const record = buildBundledCompanionRecord(userId, template);
   const scene: HatchSceneState = {
     step: "bones_reveal",
@@ -128,7 +104,7 @@ export async function runSetupCommand(options: SetupCommandOptions = {}): Promis
     attempt: 0,
   };
 
-  io.writeLine(purpose === "rehatch" ? text.rebinding : text.wakingUp);
+  io.writeLine(text.wakingUp);
   io.writeLine(dim(text.seedLocked(userId)));
   await sleep(STAGE_DELAY_MS);
 

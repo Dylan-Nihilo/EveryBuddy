@@ -37,7 +37,6 @@ program
   .command("hatch")
   .description("Hatch a companion from the bundled atlas and persist it to ~/.terminal-buddy/companion.json.")
   .option("-u, --user <id>", "Deterministic user id seed")
-  .option("--force", "Replace an existing companion")
   .action(async (options) => {
     await runHatchCommand(options);
   });
@@ -55,14 +54,6 @@ program
   .option("-u, --user <id>", "Deterministic user id seed")
   .action(async (options) => {
     await runSetupCommand({ ...options, purpose: "setup" });
-  });
-
-program
-  .command("rehatch")
-  .description("Draw a new companion and replace the current one.")
-  .option("-u, --user <id>", "Deterministic user id seed")
-  .action(async (options) => {
-    await runSetupCommand({ ...options, purpose: "rehatch" });
   });
 
 program
