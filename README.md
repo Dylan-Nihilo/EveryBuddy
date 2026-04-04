@@ -10,6 +10,16 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Node.js-≥20-339933?logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/tmux-required-1BB91F?logo=tmux&logoColor=white" alt="tmux" />
+  <img src="https://img.shields.io/badge/Shell-zsh-F15A24?logo=zsh&logoColor=white" alt="zsh" />
+  <img src="https://img.shields.io/badge/License-MIT-blue" alt="License" />
+  <img src="https://img.shields.io/badge/Species-24-FBBF24" alt="24 Species" />
+  <img src="https://img.shields.io/badge/Rarity_Tiers-5-C084FC" alt="5 Rarity Tiers" />
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick Start</a> ·
   <a href="#how-it-works">How It Works</a> ·
   <a href="#rarity-tiers">Rarity</a> ·
