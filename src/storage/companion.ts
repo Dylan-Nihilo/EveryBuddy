@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { DEFAULT_OBSERVER_PROFILE, parseOptionalObserverProfile } from "../soul/profile.js";
 import { companionFilePath, defaultStorageDir } from "./paths.js";
+import { signRecord, verifyRecord, type SignedCompanionRecord, type IntegrityStatus } from "./integrity.js";
 import type {
   ColorPalette,
   CompanionBones,
@@ -39,11 +40,20 @@ export async function writeCompanionRecord(
     storageDir,
     `.companion.${process.pid}.${Date.now().toString(36)}.tmp`,
   );
-  const payload = JSON.stringify(record, null, 2);
+  const signed = signRecord(record);
+  const payload = JSON.stringify(signed, null, 2);
 
   await mkdir(storageDir, { recursive: true });
   await writeFile(tempPath, payload, "utf8");
   await rename(tempPath, targetPath);
+}
+
+export async function checkCompanionIntegrity(
+  storageDir = defaultStorageDir(),
+): Promise<IntegrityStatus | null> {
+  const record = await readCompanionRecord(storageDir);
+  if (!record) return null;
+  return verifyRecord(record as SignedCompanionRecord);
 }
 
 function parseCompanionRecord(value: unknown): CompanionRecord {

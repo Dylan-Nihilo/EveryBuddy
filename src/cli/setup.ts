@@ -20,7 +20,7 @@ import { createProvider } from "../soul/providers/index.js";
 import { colorize, dim } from "../render/color.js";
 import { composeFrame } from "../render/compose.js";
 import { EYES, HATS, SPECIES } from "../render/sprites.js";
-import { readCompanionRecord, writeCompanionRecord } from "../storage/companion.js";
+import { readCompanionRecord, writeCompanionRecord, checkCompanionIntegrity } from "../storage/companion.js";
 import { companionFilePath } from "../storage/paths.js";
 import {
   PROVIDER_DEFAULTS,
@@ -136,13 +136,23 @@ export async function getBuddyHomeOutput(options: {
     zshrcPath: path.join(process.env.HOME ?? "", ".zshrc"),
   }));
 
+  const integrity = await checkCompanionIntegrity();
+  const tamperWarning =
+    integrity && !integrity.valid
+      ? [colorize("⚠ companion record has been modified.", "#FF6B6B"), ""]
+      : integrity && integrity.userMismatch
+        ? [colorize("⚠ companion was drawn on a different machine.", "#FF6B6B"), ""]
+        : integrity && integrity.envSeeded
+          ? [dim("⚠ drawn with custom seed (EVERYBUDDY_USER_ID)"), ""]
+          : [];
+
   const lines = [
     renderCompanionCard(options.companion, { language: options.language }),
     "",
+    ...tamperWarning,
     dim(text.alreadyHatched),
     status.hookInstalled ? text.tmuxInstalledHint : text.installTmuxHint,
     text.petAgainHint,
-    text.rehatchHint,
   ];
 
   return lines.join("\n");
