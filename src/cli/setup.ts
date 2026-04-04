@@ -170,18 +170,39 @@ async function ensureRuntimeConfig(
     return;
   }
 
+  const providerPresets = [
+    { key: "1",  name: "DashScope",      label: "Qwen",   baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus",        note: "free tier" },
+    { key: "2",  name: "DeepSeek",       label: "",        baseUrl: "https://api.deepseek.com/v1",                       model: "deepseek-chat",    note: "free tier" },
+    { key: "3",  name: "Zhipu AI",       label: "GLM",     baseUrl: "https://open.bigmodel.cn/api/paas/v4",              model: "glm-4-flash",      note: "free forever" },
+    { key: "4",  name: "Moonshot",       label: "Kimi",    baseUrl: "https://api.moonshot.cn/v1",                         model: "moonshot-v1-8k",   note: "rate-limited free" },
+    { key: "5",  name: "Doubao",         label: "Volcengine", baseUrl: "https://ark.cn-beijing.volces.com/api/v3",        model: "doubao-lite-32k",  note: "200M tokens/day free" },
+    { key: "6",  name: "SiliconFlow",    label: "",        baseUrl: "https://api.siliconflow.cn/v1",                      model: "Qwen/Qwen2.5-7B-Instruct", note: "aggregator" },
+    { key: "7",  name: "OpenAI",         label: "",        baseUrl: "https://api.openai.com/v1",                          model: "gpt-4o-mini",      note: "" },
+    { key: "8",  name: "Anthropic",      label: "Claude",  baseUrl: "https://api.anthropic.com",                          model: "claude-haiku-4-5-20251001", note: "" },
+    { key: "9",  name: "Custom",         label: "",        baseUrl: "",                                                   model: "",                 note: "any OpenAI-compatible" },
+  ];
+
   io.writeLine("");
   io.writeLine("Choose your LLM provider (powers the tmux sidecar observer):");
-  io.writeLine(`  1. DashScope     (Qwen, default: ${PROVIDER_DEFAULTS.openai.model}, free tier)`);
-  io.writeLine(`  2. Anthropic     (Claude, default: ${PROVIDER_DEFAULTS.anthropic.model})`);
-  io.writeLine("  3. OpenAI        (or any OpenAI-compatible endpoint)");
-  io.writeLine("  4. Skip          (set up later with env vars)");
+  for (const p of providerPresets) {
+    const tag = p.label ? ` (${p.label})` : "";
+    const noteTag = p.note ? `, ${p.note}` : "";
+    const modelTag = p.model ? `, ${p.model}` : "";
+    io.writeLine(`  ${p.key}. ${p.name.padEnd(14)}${tag}${modelTag}${noteTag}`);
+  }
+  io.writeLine(`  0. Skip          (set up later with env vars)`);
   io.writeLine("");
 
-  const choice = (await io.prompt("Enter 1, 2, 3, or 4 [1]: ")).trim() || "1";
+  const choice = (await io.prompt(`Enter 1-9 or 0 [1]: `)).trim() || "1";
 
-  if (choice === "4") {
-    io.writeLine(dim("Skipped. Set DASHSCOPE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY later to enable the observer."));
+  if (choice === "0") {
+    io.writeLine(dim("Skipped. Set your provider's API key as an env var later to enable the observer."));
+    return;
+  }
+
+  const preset = providerPresets.find((p) => p.key === choice);
+  if (!preset) {
+    io.writeLine(dim("Invalid choice. Skipping provider setup."));
     return;
   }
 
@@ -190,27 +211,39 @@ async function ensureRuntimeConfig(
   let observerModel = config.observerModel;
   let baseUrl = config.baseUrl;
 
-  if (choice === "2") {
+  if (preset.name === "Anthropic") {
     provider = "anthropic";
     const defaults = PROVIDER_DEFAULTS.anthropic;
     model = model || defaults.model;
     observerModel = observerModel ?? defaults.observerModel;
     baseUrl = baseUrl || defaults.baseUrl;
-  } else if (choice === "3") {
+  } else if (preset.name === "Custom") {
     provider = "custom";
-    const defaultOpenAI = "https://api.openai.com/v1";
-    baseUrl = (await io.prompt(`Base URL [${defaultOpenAI}]: `)).trim() || defaultOpenAI;
-    model = (await io.prompt("Model name [gpt-4o-mini]: ")).trim() || "gpt-4o-mini";
+    baseUrl = (await io.prompt("Base URL (OpenAI-compatible): ")).trim();
+    if (!baseUrl) {
+      io.writeLine(dim("No base URL provided. Skipping provider setup."));
+      return;
+    }
+    model = (await io.prompt("Model name: ")).trim();
+    if (!model) {
+      io.writeLine(dim("No model provided. Skipping provider setup."));
+      return;
+    }
     observerModel = model;
-  } else {
+  } else if (preset.name === "DashScope") {
     provider = "openai";
-    const defaults = PROVIDER_DEFAULTS.openai;
-    model = model || defaults.model;
-    observerModel = observerModel ?? defaults.observerModel;
-    baseUrl = baseUrl || defaults.baseUrl;
+    model = model || preset.model;
+    observerModel = observerModel ?? "qwen3-coder-next";
+    baseUrl = baseUrl || preset.baseUrl;
+  } else {
+    // All other OpenAI-compatible presets
+    provider = "openai";
+    model = model || preset.model;
+    observerModel = observerModel ?? preset.model;
+    baseUrl = baseUrl || preset.baseUrl;
   }
 
-  const keyLabel = provider === "anthropic" ? "Anthropic" : provider === "custom" ? "OpenAI" : "DashScope";
+  const keyLabel = preset.name;
   const apiKey = (await io.prompt(`Paste your ${keyLabel} API key: `)).trim();
   if (!apiKey) {
     io.writeLine(dim("No API key provided. Skipping provider setup."));

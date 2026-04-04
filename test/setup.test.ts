@@ -73,7 +73,7 @@ test("runBuddyHomeCommand shows the current pet card and tmux guidance once a co
 test("runSetupCommand draws a bundled companion locally and prompts for provider config", async () => {
   const storageDir = await mkdtemp(path.join(os.tmpdir(), "everybuddy-setup-bundled-"));
   const io = createTestIO({
-    prompts: ["4"],
+    prompts: ["0"],
   });
   const expectedTemplate = selectBundledCompanionTemplate("setup-user");
 
@@ -98,7 +98,7 @@ test("runSetupCommand draws a bundled companion locally and prompts for provider
     assert.match(io.output, /╭─/);
     assert.match(io.output, /已保存到/);
     assert.match(io.output, /Choose your LLM provider/);
-    assert.match(io.output, /Skipped\. Set DASHSCOPE_API_KEY/);
+    assert.match(io.output, /Skipped\. Set your provider/);
   } finally {
     await rm(storageDir, { recursive: true, force: true });
   }
