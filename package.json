@@ -1,6 +1,6 @@
 {
   "name": "everybuddy",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Gacha-hatched terminal companions that live in your tmux. Draw a pet, AI writes its soul, it watches your shell and reacts.",
   "type": "module",
   "bin": {
