@@ -1,0 +1,12 @@
+{
+  "name": "everybuddy",
+  "description": "Gacha-hatched terminal companions in your Claude Code status bar. ASCII sprite + session info, powered by AI personality.",
+  "version": "0.2.0",
+  "author": {
+    "name": "Dylan Thomas"
+  },
+  "homepage": "https://github.com/Dylan-Nihilo/EveryBuddy",
+  "repository": "https://github.com/Dylan-Nihilo/EveryBuddy",
+  "license": "MIT",
+  "keywords": ["companion", "pet", "statusline", "ascii", "gacha"]
+}
