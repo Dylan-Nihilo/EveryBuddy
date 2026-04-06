@@ -87,10 +87,18 @@ Tests use Node's built-in `node:test` runner with `node:assert/strict`. No exter
 - **tmux required for follow mode**: The sidecar runtime (`buddy attach`, shell hooks, observer reactions) requires tmux. Without tmux, users can hatch and view companion cards, but cannot use follow mode. All tmux-dependent paths now provide friendly i18n error messages instead of stack traces (since v0.1.5).
 - **zsh only**: Shell hook integration only supports zsh. Other shells get a clear "unsupported shell" message.
 
+## Claude Code Integration
+
+- **statusLine**: `buddy cc-statusline` / `buddy-cc-statusline` reads CC session JSON from stdin + companion.json → renders ASCII sprite side-by-side with session info
+- **Plugin**: `plugin/` directory contains CC plugin structure (`.claude-plugin/plugin.json` + `settings.json`) for marketplace distribution
+- **Layout reuse**: Pure rendering functions extracted to `src/render/layout.ts`, shared by both tmux sidecar and CC statusLine
+- **ANSI in pipe**: `cc-statusline.ts` forces `isTTY = true` because CC's terminal supports ANSI but statusLine runs as a pipe. `buddy pet --color` flag does the same for card rendering.
+
 ## Release History
 
+- **v0.2.0** — Claude Code statusLine integration (Phase 1): layout extraction, cc-statusline renderer, CC plugin structure, --color flag
 - **v0.1.5** — Friendly error messages when tmux is missing (attach/detach/TmuxClient ENOENT)
-- **v0.1.4** — (current npm)
+- **v0.1.4** — 9 LLM provider presets
 - **v0.1.3** — Provider name clarification
 - **v0.1.2** — Companion record integrity checks
 - **v0.1.1** — Remove rehatch, one draw per user
