@@ -1,4 +1,9 @@
+import os from "node:os";
+import path from "node:path";
+
+import { uiText } from "../i18n/ui.js";
 import { removeSocketIfExists, socketPathForWindow } from "../runtime/socket.js";
+import { resolveBuddyConfig } from "../storage/config.js";
 import { isEveryBuddySidecarPane, SIDECAR_OPTION, TARGET_OPTION, TmuxClient } from "../runtime/tmux.js";
 
 export interface DetachCommandOptions {
@@ -13,7 +18,12 @@ export async function runDetachCommand(options: DetachCommandOptions = {}): Prom
       return;
     }
 
-    throw new Error("EveryBuddy detach requires tmux.");
+    const storageDir = path.join(os.homedir(), ".terminal-buddy");
+    const language = (await resolveBuddyConfig({ storageDir })).language;
+    const text = uiText(language);
+    process.stderr.write(`${text.detachRequiresTmux}\n`);
+    process.exitCode = 1;
+    return;
   }
 
   const windowId = await tmux.currentWindowId();

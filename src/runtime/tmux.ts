@@ -149,6 +149,12 @@ export class TmuxClient {
       const result = await execFileAsync(tmuxBin, args, { env: this.env });
       return result.stdout;
     } catch (error) {
+      if (isSpawnError(error) && error.code === "ENOENT") {
+        throw new Error(
+          `tmux binary not found (looked for "${tmuxBin}"). Install tmux first — macOS: \`brew install tmux\`.`,
+        );
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`tmux command failed: ${tmuxBin} ${args.join(" ")}: ${message}`);
     }
@@ -223,4 +229,8 @@ function paneIdNumber(paneId: string): number {
 
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function isSpawnError(error: unknown): error is NodeJS.ErrnoException {
+  return typeof error === "object" && error !== null && "code" in error;
 }

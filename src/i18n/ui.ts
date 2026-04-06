@@ -58,6 +58,9 @@ export interface UiText {
   openTmuxSessionHint: string;
   autoAppearHint: string;
   hatchSuccess(name: string, userId: string): string;
+  attachRequiresTmux: string;
+  attachRequiresTmuxHint: string;
+  detachRequiresTmux: string;
 }
 
 const EN_TEXT: UiText = {
@@ -134,6 +137,9 @@ const EN_TEXT: UiText = {
   hatchSuccess(name: string, userId: string): string {
     return `Hatched ${name} for ${userId} from the bundled atlas.`;
   },
+  attachRequiresTmux: "EveryBuddy attach requires a tmux session.",
+  attachRequiresTmuxHint: "Start a tmux session first, then run `buddy attach` inside it.",
+  detachRequiresTmux: "Not inside a tmux session — nothing to detach.",
 };
 
 const ZH_TEXT: UiText = {
@@ -210,6 +216,9 @@ const ZH_TEXT: UiText = {
   hatchSuccess(name: string, userId: string): string {
     return `已从内置图鉴中为 ${userId} 绑定 ${name}。`;
   },
+  attachRequiresTmux: "buddy attach 需要在 tmux 会话内运行。",
+  attachRequiresTmuxHint: "先启动一个 tmux 会话，再在里面运行 `buddy attach`。",
+  detachRequiresTmux: "当前不在 tmux 会话中，没有可分离的 sidecar。",
 };
 
 const SPECIES_NAMES_ZH: Record<string, string> = {

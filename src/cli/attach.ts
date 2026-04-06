@@ -1,4 +1,9 @@
+import os from "node:os";
+import path from "node:path";
+
+import { uiText } from "../i18n/ui.js";
 import { removeSocketIfExists, socketPathForWindow } from "../runtime/socket.js";
+import { resolveBuddyConfig } from "../storage/config.js";
 import {
   buildAttachContext,
   buildSidecarCommand,
@@ -23,7 +28,12 @@ export async function runAttachCommand(options: AttachCommandOptions): Promise<A
       return null;
     }
 
-    throw new Error("EveryBuddy attach requires a tmux work pane.");
+    const storageDir = path.join(os.homedir(), ".terminal-buddy");
+    const language = (await resolveBuddyConfig({ storageDir })).language;
+    const text = uiText(language);
+    process.stderr.write(`${text.attachRequiresTmux}\n${text.attachRequiresTmuxHint}\n`);
+    process.exitCode = 1;
+    return null;
   }
 
   const targetPaneId = await tmux.currentPaneId();
