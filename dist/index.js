@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { runAttachCommand } from "./cli/attach.js";
+import { runInstallClaudeCodeCommand } from "./cli/cc-install.js";
 import { runCCStatusLineCommand } from "./cli/cc-statusline.js";
 import { runCardCommand } from "./cli/card.js";
 import { runDetachCommand } from "./cli/detach.js";
@@ -53,10 +54,15 @@ program
     .command("install <target>")
     .description("Install EveryBuddy into a supported terminal host.")
     .action(async (target) => {
-    if (target !== "tmux") {
-        throw new Error("Only `buddy install tmux` is supported right now.");
+    if (target === "tmux") {
+        await runInstallTmuxCommand();
     }
-    await runInstallTmuxCommand();
+    else if (target === "claude-code") {
+        await runInstallClaudeCodeCommand();
+    }
+    else {
+        throw new Error(`Unknown target "${target}". Supported: tmux, claude-code`);
+    }
 });
 program
     .command("attach")
