@@ -4,7 +4,8 @@
   "description": "Gacha-hatched terminal companions that live in your tmux. Draw a pet, AI writes its soul, it watches your shell and reacts.",
   "type": "module",
   "bin": {
-    "buddy": "dist/index.js"
+    "buddy": "dist/index.js",
+    "buddy-cc-statusline": "dist/cc-statusline.js"
   },
   "files": [
     "dist",

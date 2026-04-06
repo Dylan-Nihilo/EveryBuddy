@@ -6,7 +6,7 @@ import {
   resolveReactionBubble,
   resolveRenderMode,
   resolveSpriteFrameState,
-} from "../src/runtime/sidecar.js";
+} from "../src/render/layout.js";
 import type { CompanionRecord } from "../src/types/companion.js";
 
 test("resolveReactionBubble hides expired reactions and fades near expiry", () => {

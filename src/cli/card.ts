@@ -5,7 +5,15 @@ import { uiText } from "../i18n/ui.js";
 
 export const NO_COMPANION_MESSAGE = uiText("zh").noCompanionFound;
 
-export async function runCardCommand(): Promise<void> {
+export interface CardCommandOptions {
+  color?: boolean | undefined;
+}
+
+export async function runCardCommand(options: CardCommandOptions = {}): Promise<void> {
+  if (options.color) {
+    Object.defineProperty(process.stdout, "isTTY", { value: true });
+  }
+
   const output = await getCardOutput();
   process.stdout.write(`${output}\n`);
 }

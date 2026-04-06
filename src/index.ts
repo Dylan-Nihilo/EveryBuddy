@@ -3,6 +3,7 @@
 import { Command } from "commander";
 
 import { runAttachCommand } from "./cli/attach.js";
+import { runCCStatusLineCommand } from "./cli/cc-statusline.js";
 import { runCardCommand } from "./cli/card.js";
 import { runDetachCommand } from "./cli/detach.js";
 import { runEventCommand } from "./cli/event.js";
@@ -22,15 +23,17 @@ program
 program
   .command("card")
   .description("Render the persisted buddy card.")
-  .action(async () => {
-    await runCardCommand();
+  .option("--color", "Force ANSI color output even when stdout is not a TTY")
+  .action(async (options) => {
+    await runCardCommand(options);
   });
 
 program
   .command("pet")
   .description("Show the current companion card.")
-  .action(async () => {
-    await runCardCommand();
+  .option("--color", "Force ANSI color output even when stdout is not a TTY")
+  .action(async (options) => {
+    await runCardCommand(options);
   });
 
 program
@@ -99,6 +102,13 @@ program
   .option("--exit-code <code>", "Exit code for command_end")
   .action(async (type, options) => {
     await runEventCommand(type, options);
+  });
+
+program
+  .command("cc-statusline")
+  .description("Claude Code statusLine renderer — reads session JSON from stdin, outputs ASCII companion.")
+  .action(async () => {
+    await runCCStatusLineCommand();
   });
 
 program
