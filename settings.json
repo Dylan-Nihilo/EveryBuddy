@@ -1,7 +1,7 @@
 {
   "statusLine": {
     "type": "command",
-    "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/cc-statusline.js"
+    "command": "buddy cc-statusline"
   },
   "hooks": {
     "SessionStart": [

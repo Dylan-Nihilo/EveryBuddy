@@ -60,7 +60,7 @@ export async function runInstallClaudeCodeCommand(options: CCInstallOptions = {}
 
   settings.statusLine = {
     type: "command",
-    command: "buddy-cc-statusline",
+    command: "buddy cc-statusline",
   };
 
   await writeJSONFile(settingsPath, settings);
