@@ -7,6 +7,6 @@ allowedTools:
 
 Run this exact command:
 
-buddy install claude-code
+node ${CLAUDE_PLUGIN_ROOT}/dist/index.js install claude-code
 
-Show the full output to the user. If the command is not found, tell the user to install EveryBuddy first: `npm install -g everybuddy`
+Show the full output. After success, tell the user to restart Claude Code.

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { buildBundledCompanionRecord, selectBundledCompanionTemplate } from "../atlas/bundled.js";
@@ -22,7 +22,10 @@ export async function runInstallClaudeCodeCommand(options = {}) {
     else {
         io.writeLine(`Companion already exists: ${existing.soul.name}.`);
     }
-    // Step 2: Merge statusLine into ~/.claude/settings.json.
+    // Step 2: Resolve the statusLine command.
+    const statusLineCommand = await resolveStatusLineCommand(claudeDir);
+    io.writeLine(`StatusLine command: ${statusLineCommand}`);
+    // Step 3: Merge statusLine into ~/.claude/settings.json.
     const settings = await readJSONFile(settingsPath);
     if (settings.statusLine) {
         const current = typeof settings.statusLine === "object" ? settings.statusLine.command : null;
@@ -45,13 +48,67 @@ export async function runInstallClaudeCodeCommand(options = {}) {
     }
     settings.statusLine = {
         type: "command",
-        command: "buddy cc-statusline",
+        command: statusLineCommand,
     };
     await writeJSONFile(settingsPath, settings);
     io.writeLine(`Wrote statusLine config to ${settingsPath}.`);
     io.writeLine("");
     io.writeLine("Done! Restart Claude Code to see your companion in the status bar.");
     return { statusLine: "installed", companion: companionStatus };
+}
+async function resolveStatusLineCommand(claudeDir) {
+    // Try 1: Find cc-statusline.js in plugin cache.
+    const pluginDist = await findPluginDistPath(claudeDir);
+    if (pluginDist) {
+        return `node ${pluginDist}/cc-statusline.js`;
+    }
+    // Try 2: Find it relative to this running script (npm global install).
+    const selfDist = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+    const selfEntry = path.join(selfDist, "cc-statusline.js");
+    if (await fileExists(selfEntry)) {
+        return `node ${selfEntry}`;
+    }
+    // Fallback: assume buddy is in PATH.
+    return "buddy cc-statusline";
+}
+async function findPluginDistPath(claudeDir) {
+    const { readdir } = await import("node:fs/promises");
+    const cacheBase = path.join(claudeDir, "plugins", "cache");
+    let marketplaces;
+    try {
+        marketplaces = await readdir(cacheBase);
+    }
+    catch {
+        return undefined;
+    }
+    for (const marketplace of marketplaces) {
+        const pluginDir = path.join(cacheBase, marketplace, "everybuddy");
+        let versions;
+        try {
+            versions = await readdir(pluginDir);
+        }
+        catch {
+            continue;
+        }
+        // Pick the latest version directory.
+        versions.sort().reverse();
+        for (const version of versions) {
+            const candidate = path.join(pluginDir, version, "dist");
+            if (await fileExists(path.join(candidate, "cc-statusline.js"))) {
+                return candidate;
+            }
+        }
+    }
+    return undefined;
+}
+async function fileExists(filePath) {
+    try {
+        await access(filePath);
+        return true;
+    }
+    catch {
+        return false;
+    }
 }
 async function readJSONFile(filePath) {
     try {
