@@ -89,8 +89,9 @@ Tests use Node's built-in `node:test` runner with `node:assert/strict`. No exter
 
 ## Claude Code Integration
 
-- **statusLine**: `buddy cc-statusline` / `buddy-cc-statusline` reads CC session JSON from stdin + companion.json → renders ASCII sprite side-by-side with session info
-- **Plugin**: `plugin/` directory contains CC plugin structure (`.claude-plugin/plugin.json` + `settings.json`) for marketplace distribution
+- **Plugin repo**: [Dylan-Nihilo/everybuddy-claude-plugin](https://github.com/Dylan-Nihilo/everybuddy-claude-plugin) — separate repo for CC plugin distribution
+- **statusLine**: `buddy cc-statusline` reads CC session JSON from stdin + companion.json → renders ASCII sprite side-by-side with session info
+- **Install command**: `buddy install claude-code` — auto-hatches companion + writes statusLine config to `~/.claude/settings.json`
 - **Layout reuse**: Pure rendering functions extracted to `src/render/layout.ts`, shared by both tmux sidecar and CC statusLine
 - **ANSI in pipe**: `cc-statusline.ts` forces `isTTY = true` because CC's terminal supports ANSI but statusLine runs as a pipe. `buddy pet --color` flag does the same for card rendering.
 
