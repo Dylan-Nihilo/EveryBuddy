@@ -102,15 +102,33 @@ Higher rarity = longer animation = more anticipation.
   <img src="docs/screenshots/rarity-shelf.png" alt="Rarity Shelf" width="720" />
 </p>
 
+## Claude Code Integration
+
+Your companion can also live in the Claude Code status bar.
+
+```bash
+buddy install claude-code   # configures statusLine + auto-hatches
+```
+
+Or install via the [CC plugin](https://github.com/Dylan-Nihilo/everybuddy-claude-plugin):
+
+```
+/plugin marketplace add Dylan-Nihilo/everybuddy-claude-plugin
+/plugin install everybuddy
+/everybuddy:setup
+```
+
 ## Commands
 
 ```bash
-buddy                # show your companion (or first-run setup)
-buddy setup          # reconfigure LLM provider
-buddy hatch          # re-draw a new companion
-buddy hatch --force  # force replace current companion
-buddy install tmux   # install shell hooks in ~/.zshrc
-buddy pet            # pet your companion
+buddy                       # show your companion (or first-run setup)
+buddy setup                 # reconfigure LLM provider
+buddy hatch                 # re-draw a new companion
+buddy hatch --force         # force replace current companion
+buddy install tmux          # install shell hooks in ~/.zshrc
+buddy install claude-code   # configure Claude Code status bar
+buddy pet                   # view companion card
+buddy pet --color           # force ANSI color output in non-TTY
 ```
 
 ## LLM Providers
