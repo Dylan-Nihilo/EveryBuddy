@@ -1,6 +1,18 @@
 {
   "statusLine": {
     "type": "command",
-    "command": "buddy-cc-statusline"
+    "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/cc-statusline.js"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/cc-auto-hatch.js"
+          }
+        ]
+      }
+    ]
   }
 }
