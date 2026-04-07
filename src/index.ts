@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createRequire } from "node:module";
 import { Command } from "commander";
 
 import { runAttachCommand } from "./cli/attach.js";
@@ -19,7 +20,7 @@ const program = new Command();
 program
   .name("buddy")
   .description("A terminal companion that hatches on first run and follows you through tmux.")
-  .version("0.1.0");
+  .version((createRequire(import.meta.url)("../package.json") as { version: string }).version);
 
 program
   .command("card")
