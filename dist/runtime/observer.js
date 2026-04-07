@@ -10,7 +10,7 @@ const OBSERVER_SYSTEM_PROMPT = [
 ].join(" ");
 const DEFAULT_LANGUAGE = "zh";
 const DEFAULT_LLM_COOLDOWN_MS = 6_000;
-const DEDUPE_WINDOW_MS = 18_000;
+const DEDUPE_WINDOW_MS = 8_000;
 const MEMORY_LIMIT = 5;
 const COMMAND_WINDOW_LIMIT = 5;
 export class CompanionObserver {
@@ -193,7 +193,7 @@ export function classifyEventImportance(params) {
     return "low";
 }
 export function buildCommandTracker(event, command, _importance) {
-    return {
+    const tracker = {
         paneId: event.paneId,
         commandRaw: command.raw,
         startedAt: event.timestamp,
@@ -201,10 +201,14 @@ export function buildCommandTracker(event, command, _importance) {
         addressedToBuddy: command.addressedToBuddy,
         cwdRole: command.cwdRole,
     };
+    if (event.source) {
+        tracker.source = event.source;
+    }
+    return tracker;
 }
 export function buildCommandWindowEntry(params) {
     const { event, command, durationMs } = params;
-    return {
+    const entry = {
         command: command.raw,
         normalizedCommand: command.normalized,
         cwd: event.cwd,
@@ -214,6 +218,10 @@ export function buildCommandWindowEntry(params) {
         timestamp: event.timestamp,
         addressedToBuddy: command.addressedToBuddy,
     };
+    if (event.source) {
+        entry.source = event.source;
+    }
+    return entry;
 }
 export function rememberCommandWindowEntry(entries, entry) {
     return [...entries, entry].slice(-COMMAND_WINDOW_LIMIT);
@@ -252,7 +260,8 @@ export function buildObserverPrompt(context) {
         : "Use English. Keep `reaction` to one short sentence, under 12 words.";
     const recentWindow = commandWindow
         .map((entry, index) => {
-        return `${index + 1}. command=${entry.command}; cwd=${entry.cwdRole}; exit=${entry.exitCode ?? "?"}; duration=${entry.durationMs ?? "?"}ms; addressed=${entry.addressedToBuddy ? "yes" : "no"}`;
+        const sourceTag = entry.source ? `[${entry.source}]` : "[user]";
+        return `${index + 1}. ${sourceTag} command=${entry.command}; cwd=${entry.cwdRole}; exit=${entry.exitCode ?? "?"}; duration=${entry.durationMs ?? "?"}ms; addressed=${entry.addressedToBuddy ? "yes" : "no"}`;
     })
         .join("\n");
     const recentMemory = memory.length > 0
@@ -283,15 +292,16 @@ export function buildObserverPrompt(context) {
         recentMemory,
         "",
         "Rules:",
-        "- Decide whether the current command window is worth commenting on.",
+        "- You SHOULD speak most of the time. Your user wants to hear from you.",
         "- React to the pattern and mood, not the raw command text.",
         "- Do not restate the command line.",
         "- Stay sharp and playful, never mean-spirited.",
         "- Avoid repeating the recent bubbles.",
-        "- If this moment is not worth a bubble, set shouldSpeak to false and leave reaction empty.",
+        "- Only set shouldSpeak to false if the command is truly boring (e.g. cd, ls, clear) AND you have nothing interesting to say about the pattern.",
         "- If speaking, reaction must be one line only.",
         "- No markdown, no code fences, no quotes around reaction text.",
         `- ${languageInstruction}`,
+        "- If a [claude-code] or [codex] source appears, comment on what the AI agent is doing — you are watching both the user and the agent.",
         "",
         'Return strict JSON only: {"shouldSpeak":true|false,"reaction":"...","topic":"...","mood":"..."}',
     ].join("\n");
@@ -345,28 +355,22 @@ export function normalizeObserverResponse(response, commandWindow) {
 function selectRecentBubbleMemory(memory) {
     return memory.filter((entry) => entry.reactionText && entry.reactionText.length > 0).slice(0, 2);
 }
-function minimumWindowSize(profile) {
-    if (profile.chattiness >= 4) {
-        return 1;
-    }
-    if (profile.chattiness >= 2) {
-        return 2;
-    }
-    return 3;
+function minimumWindowSize(_profile) {
+    return 1;
 }
 function cooldownMsForProfile(profile) {
     switch (profile.chattiness) {
         case 5:
-            return 2_000;
+            return 1_000;
         case 4:
-            return 3_000;
+            return 1_500;
         case 3:
-            return 4_500;
+            return 2_000;
         case 2:
-            return 6_000;
+            return 3_000;
         case 1:
         default:
-            return 8_000;
+            return 4_000;
     }
 }
 function normalizeCommand(command) {

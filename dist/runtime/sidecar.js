@@ -150,7 +150,9 @@ async function handleShellEvent(state, payload, observer, rerender, eventVersion
         if (event.windowId !== state.windowId) {
             return;
         }
-        state.targetPaneId = event.paneId;
+        if (!event.source || event.source === "user") {
+            state.targetPaneId = event.paneId;
+        }
         state.cwd = event.cwd;
         state.lastUpdatedAt = event.timestamp;
         state.renderMode = resolveRenderMode(currentPaneWidth());

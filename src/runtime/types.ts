@@ -14,6 +14,7 @@ export interface ShellEvent {
   command?: string;
   exitCode?: number;
   timestamp: number;
+  source?: "user" | "claude-code" | "codex" | string;
 }
 
 export interface ObservedCommand {
@@ -32,6 +33,7 @@ export interface CommandWindowEntry {
   durationMs: number | undefined;
   timestamp: number;
   addressedToBuddy: boolean;
+  source?: string;
 }
 
 export interface ObserverDecision {
@@ -64,6 +66,7 @@ export interface CommandTracker {
   cwd: string;
   addressedToBuddy: boolean;
   cwdRole: string;
+  source?: string;
 }
 
 export interface RecentReaction {

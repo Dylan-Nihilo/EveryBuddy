@@ -121,7 +121,11 @@ test("buildObserverPrompt frames the buddy as a separate watcher and includes st
   assert.match(prompt, /Recent command window/);
   assert.match(prompt, /Return strict JSON only/);
   assert.doesNotMatch(prompt, /Current category:/);
+  // No source → defaults to [user] tag.
+  assert.match(prompt, /\[user\] command=pnpm install/);
+  assert.match(prompt, /\[user\] command=pnpm dev/);
 });
+
 
 test("parseObserverDecision reads structured JSON and normalizeObserverResponse rejects command echo", () => {
   const decision = parseObserverDecision(
