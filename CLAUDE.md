@@ -97,6 +97,7 @@ Tests use Node's built-in `node:test` runner with `node:assert/strict`. No exter
 
 ## Release History
 
+- **v0.2.1** — More talkative observer (lower cooldowns, eager prompt), dynamic version from package.json
 - **v0.2.0** — Claude Code statusLine integration (Phase 1): layout extraction, cc-statusline renderer, CC plugin structure, --color flag
 - **v0.1.5** — Friendly error messages when tmux is missing (attach/detach/TmuxClient ENOENT)
 - **v0.1.4** — 9 LLM provider presets
